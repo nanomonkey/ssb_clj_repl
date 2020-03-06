@@ -1,0 +1,36 @@
+A Clojurescript REPL for playing with Scuttlebutt Nodejs libraries.
+
+For more information on running clojurescript from Shadow-cljs:
+ https://shadow-cljs.github.io/docs/UsersGuide.html
+
+Compile and watch for changes to source files:
+#+BEGIN_SRC sh
+shadow-cljs watch app
+#+END_SRC
+
+launch node application:
+#+BEGIN_SRC sh
+node out/main.js
+#+END_SRC
+
+Installing new npm dependencies:
+#+BEGIN_SRC sh
+npm install the-thing
+#+END_SRC
+
+In Emacs connect with Cider to Clojurescript REPL use 'M-x cider-connect', 
+then run 
+#+BEGIN_SRC clojurescript
+(shadow.cljs.devtools.api/nrepl-select :app) at repl
+#+END_SRC
+
+Then switch to the server.main namespace from REPL
+#+BEGIN_SRC clojure
+(in-ns 'server.core)
+#+END_SRC
+
+Or connect to REPL for the build from the command line:
+#+BEGIN_SRC sh
+shadow-cljs cljs-repl app
+#+END_SRC
+
