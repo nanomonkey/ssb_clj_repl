@@ -1,7 +1,8 @@
 (ns server.core
   (:require [cljs.core.async :refer (chan put! take! close! timeout >! <!)]
+            [goog.object :as gobj]
+            [server.ws :as ws]
             ["ssb-server" :as ssb-server]
-            ["ssb-client" :as ssb-client]
             ["ssb-server/plugins/master" :as ssb-master]
             ["ssb-gossip" :as ssb-gossip]
             ["ssb-replicate" :as ssb-replicate]
@@ -14,35 +15,15 @@
             ["pull-stream" :as pull]
             ["flumeview-reduce" :as fv-reduce]
             ["flumeview-query" :as fv-query]
-            ["flumedb" :as flumedb]
-            ["ws" :as ws]
-            [goog.object :as gobj])
+            ["flumedb" :as flumedb])
   (:require-macros [cljs.core.async.macros :refer [go go-loop]]))
 
-;; Setup Server
-(defn create-secret-key [filename] 
+;; Secret Keys and Config file generation
+(defn create-secret-key [filename]  
   (. ssb-keys loadOrCreateSync filename))
 
 #_(defonce secret-key (. ssb-keys loadSync  "/.ssb/secret"))
 
-(def config (ssb-config "/.ssb" nil))
-
-;; Add plugins
-(defonce plugins (do
-                   (.use ssb-server ssb-master)
-                   (.use ssb-server ssb-gossip)
-                   (.use ssb-server ssb-replicate)
-                   (.use ssb-server ssb-query)
-                   (.use ssb-server ssb-backlinks)
-                   (.use ssb-server ssb-about)))
-
-;; start server
-(def server (ssb-server config))
-
-(defn cb
- "attempt to abstract out callbacks"
-  ([] (cb println))
-  ([function] (fn [err msg] (if err (println "Error: " err) (function msg)))))
 
 ;; messages
 (defn format-message 
@@ -78,15 +59,18 @@
                 (println "message published:" msg)))))
 
 (comment 
- ;; publish a message
+ ;; publish a message 
  ;;(pub-message server "Boom!")
  ;;(publish server {:content {:text "Kaploo!"} :type "post"})
+ ;;(post-reply server "Baam!!" root branch mentions)
 )
 
 (defn parse-json [msg] 
   (js->clj msg :keywordize-keys true))
 
-(defonce id (:id (parse-json (.whoami server))))
+(defn get-id [server]
+  (:id (parse-json (.whoami server))))
+
 
 ;;{ type: 'post', text: String, channel: String, root: MsgLink, branch: MsgLink|MsgLinks, recps: FeedLinks, mentions: Links }
 ;;{ type: 'post-edit', text: String, root: MsgLink, revisionRoot: MsgLink, revisionBranch: MsgLink, mentions: Links }
@@ -95,7 +79,6 @@
 ;;{ type: 'vote', vote: { link: Ref, value: -1|0|1, reason: String } }
 ;;{ type: 'pub', pub: { link: FeedRef, host: String, port: Number } }
 
-;;(defn reply-to [db message root branch mentions])
 
 ;; Flume-reduce
 (def default-codec
@@ -132,28 +115,9 @@
 (comment
   (feed server)
   (user-feed server id)
-)
-
-(comment
-
-  (defn read-file->chan [path] 
-    "returns channel with file contents"
-    (let [fs (node/require "fs") 
-          c (chan)]
-      (.readFile fs path "utf8" (fn [err data] (go (>! c data)))) 
-      c)) 
-
-  (defn create-read-stream [path]
-    (let [out (async/chan)
-          stream (.createReadStream fs path)]
-      (.on stream "close" #(async/close! out))
-      (.on stream "data" #(async/put!  out %))
-      out))
-
-;; For greater speed on lookups  use goog.object/getValueByKeys obj  
-;; instead of (get-in (js->clj obj :keywordize-key true))
 
 )
+
 (defn userfeed->chan [db user-id]
   (let [out (chan)
         user-feed (pull (.createHistoryStream db #js {:id user-id})
@@ -240,6 +204,7 @@
 (def names (atom {}))
 
 (defn add-about [db id]
+  "updates name from about-name channel"
   (take! (about-name db id) #(swap! names assoc id %)))
 
 (defn lookup-name [db id]
@@ -323,10 +288,14 @@
 (defn friends-hop [db user-id]
   (.friends.hops db user-id (fn [err msg] (if err (js/console.log err) 
                                               (println msg)))))
-(def manifest (.manifest server))
+;;(def manifest (.manifest server))
 ;;(def peers (.gossip.peers server #js {:id id}))
 
 ;; Links
+(defn cb
+ "attempt to abstract out callbacks"
+  ([] (cb println))
+  ([func] (fn [err msg] (if err (println "Error: " err) (func msg)))))
 
 (defn threads [db message-id] 
   "doesn't quite work..."
@@ -361,37 +330,36 @@
   (println "------")
   (read-ch chan))
 
-
-;; Websocket Server
-
-(defn create-ws [[send-ch recv-ch]]
-  (let [wss (new ws/Server  #js{:port 3434})]
-    (go (.on wss 'connection' (fn [socket] (.on socket 'message' (fn [message] (>! recv-ch message)))
-                                (.send socket (<! send-ch)))))))
-
-;; (defn recieved-msg [recv-ch]
-  ;; (go-loop (take! recv-ch println)))
-
-;; (defn send-msg [send-ch msg] (go-loop (put! send-ch msg)))
-
-;; (defn load-from-chan [c]
-  ;; (go
-    ;; (loop []
-;; (when-let [page-numbers (<! c)]
-  ;; (doseq [page-number page-numbers]
-    ;; (load-page! page-number))
-  ;; (<! (a/timeout WAIT-BETWEEN-LOAD))
-  ;; (recur)))))
-
+(defn start-server [config-directory]
+  (let [config (ssb-config config-directory nil)
+        plugins (do (.use ssb-server ssb-master)
+                    (.use ssb-server ssb-gossip)
+                    (.use ssb-server ssb-replicate)
+                    (.use ssb-server ssb-query)
+                    (.use ssb-server ssb-backlinks)
+                    (.use ssb-server ssb-about))
+        server (ssb-server config)
+        id (get-id server)]
+    (js/console.log "server started")
+    (js/console.log "Logged in as:" id)
+    {:server server
+     :id id}))
 
 ;; Main Loop
 (defn main [& args]
-  (let [server (ssb-server config)
+  (let [db-conn (start-server "/.ssb")
+        server (:server db-conn)
+        id (:id db-conn)
+        error-ch (chan 5)
+        msg-ch (chan 5)
         recd-ch (chan 5)
         send-ch (chan 5)]
-    (js/console.log "server started")
-    (create-ws [send-ch recd-ch])
-    (js/console.log "Websocket opened on ws://localhost:3434")))
+    (ws/start!)))
 
 (defn reload! []
   (js/console.log "re-starting server"))
+
+;; REPL 
+; After running 'M-x cider-connect'
+; (shadow.cljs.devtools.api/nrepl-select :server)
+; (in-ns 'server.core)

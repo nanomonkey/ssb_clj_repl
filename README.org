@@ -5,7 +5,7 @@ For more information on running clojurescript from Shadow-cljs:
 
 Compile and watch for changes to source files:
 #+BEGIN_SRC sh
-shadow-cljs watch app
+shadow-cljs watch server
 #+END_SRC
 
 launch node application:
@@ -19,9 +19,9 @@ npm install the-thing
 #+END_SRC
 
 In Emacs connect with Cider to Clojurescript REPL use 'M-x cider-connect', 
-then run 
+then run the following at the repl:
 #+BEGIN_SRC clojurescript
-(shadow.cljs.devtools.api/nrepl-select :app) at repl
+(shadow.cljs.devtools.api/nrepl-select :server) 
 #+END_SRC
 
 Then switch to the server.main namespace from REPL

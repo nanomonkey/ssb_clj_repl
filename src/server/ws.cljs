@@ -1,6 +1,7 @@
-(ns ssb-client-cljs.ws
+(ns server.ws
   "Sente based web socket"
-   (:require
+  (:require
+   [server.ssb :as ssb]
    ;;[cljs.nodejs        :as nodejs]
    [clojure.string     :as str]
    [hiccups.runtime    :as hiccupsrt]
@@ -9,6 +10,8 @@
    [taoensso.timbre    :as timbre :refer-macros (tracef debugf infof warnf errorf)]
    [taoensso.sente     :as sente]
    [taoensso.sente.server-adapters.express :as sente-express]
+
+   ;;nodejs libraries
    ["http" :as http]
    ["express" :as express]
    ["express-ws" :as express-ws]
@@ -16,7 +19,7 @@
    ["cookie-parser" :as cookie-parser]
    ["body-parser" :as body-parser]
    ["csurf" :as csurf]
-   ["session" :as session]
+   ["express-session" :as express-session]
 
    ;; Optional, for Transit encoding:
    ;[taoensso.sente.packers.transit :as sente-transit]
@@ -31,17 +34,10 @@
 
 ;;;; Ring handlers
 
-(defn not-found [ring-req]
-  (-> (hiccups/html
-       [:html
-        [:body
-         [:h2 (:uri ring-req) " was not found"]]])
-      (m-resp/not-found)
-      (m-resp/content-type "text/html")))
-
 (defn landing-pg-handler [ring-req]
   (debugf "Landing page handler")
   (-> [:html
+       [:header "Content-Type: text/html"]
        [:body
         [:h1 "Sente reference example"]
         [:p "An Ajax/WebSocket" [:strong " (random choice!)"] " has been configured for this example"]
@@ -65,12 +61,21 @@
 
         [:hr]
         [:h2 "Step 4: want to re-randomize Ajax/WebSocket connection type?"]
-        [:p "Hit your browser's reload/refresh button"]
-        [:script {:src "main.js"}]    ; Include our cljs target
+;        [:p "Hit your browser's reload/refresh button"]
+
+[:hr]
+        [:h2 "Step 5: Post Message"]
+        [:p  "The server can use this id to send events to *you* specifically."]
+        [:p
+         [:input#input-post {:type :text :placeholder "Message text..."}]
+         [:button#btn-post {:type "button"} "Post!"]]
+
+        [:script {:src "js/main.js"}]    ; Include our cljs target
         ]]
       (hiccups/html)
-      (m-resp/ok)
-      (m-resp/content-type "text/html")))
+     ;; (m-resp/ok)
+     ;; (m-resp/content-type "text/html")
+      ))
 
 (defn login-handler
   "Here's where you'll add your server-side login/auth procedure (Friend, etc.).
@@ -123,7 +128,7 @@
     (.get "/chsk" ajax-get-or-ws-handshake)
     (.post "/chsk" ajax-post)
     (.post "/login" express-login-handler)
-    (.use (.static express "resources/public"))
+    (.use (.static express "public"))
     (.use (fn [req res next]
             (warnf "Unhandled request: %s" (.-originalUrl req))
             (next)))))
@@ -134,11 +139,11 @@
       (.use (fn [req res next]
               (tracef "Request: %s" (.-originalUrl req))
               (next)))
-      (.use (session
+      (.use (express-session
              #js {:secret            cookie-secret
                   :resave            true
                   :cookie            {}
-                  :store             (.MemoryStore session)
+                  :store             (.MemoryStore express-session)
                   :saveUninitialized true}))
       (.use (.urlencoded body-parser
                          #js {:extended false}))
@@ -188,7 +193,16 @@
     (when ?reply-fn
       (?reply-fn {:umatched-event-as-echoed-from-from-server event}))))
 
-;; TODO Add your (defmethod -event-msg-handler <event-id> [ev-msg] <body>)s here...
+(defmethod -event-msg-handler
+  :post
+  [{:as ev-msg :keys [event id ?data ring-req ?reply-fn send-fn]}]
+  (let [session (:session ring-req)
+        uid     (:uid     session)
+        msg (:msg ?data)]
+    (debugf "Post event: %s" event)
+    (ssb/publish! {:content msg :type "post"})
+    (when ?reply-fn
+      (?reply-fn {:post-event ?data}))))
 
 ;;;; Sente event router (our `event-msg-handler` loop)
 
@@ -248,12 +262,13 @@
 (defn start! [] (start-router!) (start-web-server!) (start-example-broadcaster!))
 ;; (defonce _start-once (start!))
 
+
+(comment
 (defn -main [& _]
   (start!))
 
 (set! *main-cli-fn* -main) ;; this is required
 
-(comment
   (start!)
-  (test-fast-server>user-pushes))
+  (test-fast-server>user-pushes)
 )

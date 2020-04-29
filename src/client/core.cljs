@@ -1,5 +1,6 @@
 (ns client.core
   (:require
+   [clojure.string  :as str]
    [cljs.core.async :as async  :refer (<! >! put! chan)]
    [taoensso.encore :as encore :refer ()]
    [taoensso.timbre :as timbre :refer-macros (tracef debugf infof warnf errorf)]
@@ -8,14 +9,23 @@
   (:require-macros
    [cljs.core.async.macros :as asyncm :refer (go go-loop)]))
 
+;;;; Util for logging output to on-screen console
 
-(let [rand-chsk-type :auto
-      packer :edn
-      {:keys [chsk ch-recv send-fn state]}
+(def output-el (.getElementById js/document "output"))
+(defn ->output! [fmt & args]
+  (let [msg (apply encore/format fmt args)]
+    (timbre/debug msg)
+    (aset output-el "value" (str "• " (.-value output-el) "\n" msg))
+    (aset output-el "scrollTop" (.-scrollHeight output-el))))
+
+(->output! "ClojureScript appears to have loaded correctly.")
+
+
+(let [{:keys [chsk ch-recv send-fn state]}
       (sente/make-channel-socket-client!
        "/chsk" ; Must match server Ring routing URL
-       {:type   rand-chsk-type
-        :packer packer})]
+       {:type   :auto
+        :packer :edn})]
 
   (def chsk       chsk)
   (def ch-chsk    ch-recv) ; ChannelSocket's receive channel
@@ -55,11 +65,16 @@
   (let [[?uid ?csrf-token ?handshake-data] ?data]
     (->output! "Handshake: %s" ?data)))
 
-;; TODO Add your (defmethod -event-msg-handler <event-id> [ev-msg] <body>)s here...
+(defmethod -event-msg-handler :post-event
+  [{:as ev-msg :keys [?data]}]
+  (let [[?uid ?csrf-token ?handshake-data ?msg] ?data]
+    (->output! "Message Posted: %s" ?msg)))
+
 
 ;;;; Sente event router (our `event-msg-handler` loop)
 
 (defonce router_ (atom nil))
+
 (defn  stop-router! [] (when-let [stop-f @router_] (stop-f)))
 (defn start-router! []
   (stop-router!)
@@ -68,6 +83,49 @@
            ch-chsk event-msg-handler)))
 
 
+;;;; UI events
+
+(when-let [target-el (.getElementById js/document "btn1")]
+  (.addEventListener target-el "click"
+                     (fn [ev]
+                       (->output! "Button 1 was clicked (won't receive any reply from server)")
+                       (chsk-send! [:example/button1 {:had-a-callback? "nope"}]))))
+
+(when-let [target-el (.getElementById js/document "btn2")]
+  (.addEventListener target-el "click"
+                     (fn [ev]
+                       (->output! "Button 2 was clicked (will receive reply from server)")
+                       (chsk-send! [:example/button2 {:had-a-callback? "indeed"}] 5000
+                                   (fn [cb-reply] (->output! "Callback reply: %s" cb-reply))))))
+
+(defn btn-login-click [ev]
+  (let [user-id (.-value (.getElementById js/document "input-login"))]
+    (if (str/blank? user-id)
+      (js/alert "Please enter a user-id first")
+      (do
+        (->output! "Logging in with user-id %s" user-id)
+
+            ;;; Use any login procedure you'd like. Here we'll trigger an Ajax
+            ;;; POST request that resets our server-side session. Then we ask
+            ;;; our channel socket to reconnect, thereby picking up the new
+            ;;; session.
+
+        (sente/ajax-lite "/login"
+                         {:method :post
+                          :headers {:x-csrf-token (:csrf-token @chsk-state)}
+                          :params {:user-id    (str user-id)}}
+                         (fn [ajax-resp]
+                           (->output! "Ajax login response: %s" ajax-resp)
+                           (let [login-successful? true ; Your logic here
+                                 ]
+                             (if-not login-successful?
+                               (->output! "Login failed")
+                               (do
+                                 (->output! "Login successful")
+                                 (sente/chsk-reconnect! chsk))))))))))
+
+(when-let [target-el (.getElementById js/document "btn-login")]
+  (.addEventListener target-el "click" btn-login-click))
 
 
 ;;;; Init stuff
