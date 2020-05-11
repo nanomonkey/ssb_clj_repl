@@ -7,9 +7,9 @@
    [taoensso.sente  :as sente  :refer (cb-success?)])
 
   (:require-macros
-   [cljs.core.async.macros :as asyncm :refer (go go-loop)]))
+   [cljs.core.async.macros :as asyncm :refer (go go-loop)]))-
 
-;;;; Util for logging output to on-screen console
+;;;; Utils for logging output and errors to on-screen console
 
 (def output-el (.getElementById js/document "output"))
 (defn ->output! [fmt & args]
@@ -20,7 +20,16 @@
 
 (->output! "ClojureScript appears to have loaded correctly.")
 
+(def errors-el (.getElementById js/document "errors"))
+(defn ->errors-put! [fmt & args]
+  (let [msg (apply encore/format fmt args)]
+    (timbre/debug msg)
+    (aset errors-el "value" (str "• " (.-value errors-el) "\n" msg))
+    (aset errors-el "scrollTop" (.-scrollHeight errors-el))))
 
+(->errors-put! "-=[ Error Messages ]=-")
+
+;; Sente Channnels
 (let [{:keys [chsk ch-recv send-fn state]}
       (sente/make-channel-socket-client!
        "/chsk" ; Must match server Ring routing URL
@@ -70,6 +79,15 @@
   (let [[?uid ?csrf-token ?handshake-data ?msg] ?data]
     (->output! "Message Posted: %s" ?msg)))
 
+(defmethod -event-msg-handler :error-event
+  [{:as ev-msg :keys [?data]}]
+  (let [[?uid ?csrf-token ?handshake-data ?msg] ?data]
+    (->errors-put! "Error: %s" ?msg)))
+
+(defmethod -event-msg-handler :search-result
+ [{:as ev-msg :keys [?data]}]
+  (let [[?uid ?csrf-token ?handshake-data ?msg] ?data]
+    (->output! "Search Result: %s" ?msg)))
 
 ;;;; Sente event router (our `event-msg-handler` loop)
 
@@ -97,6 +115,20 @@
                        (->output! "Button 2 was clicked (will receive reply from server)")
                        (chsk-send! [:example/button2 {:had-a-callback? "indeed"}] 5000
                                    (fn [cb-reply] (->output! "Callback reply: %s" cb-reply))))))
+
+
+(defn btn-post-click [ev]
+  (let [message (.-value (.getElementById js/document "input-post"))]
+    (if (str/blank? message)
+      (js/alert "Please enter a message first")
+      (do 
+        (->output! "Message Posted: %s" message)
+        (chsk-send!  [:ssb/post {:msg (str message)}] 5000
+                     (fn [cb-reply] (->output! "Posted reply: %s" cb-reply)))))))
+
+
+(when-let [target-el (.getElementById js/document "btn-post")]
+  (.addEventListener target-el "click" btn-post-click))
 
 (defn btn-login-click [ev]
   (let [user-id (.-value (.getElementById js/document "input-login"))]

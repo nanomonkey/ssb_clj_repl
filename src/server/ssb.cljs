@@ -17,8 +17,7 @@
             ["flumedb" :as flumedb])
   (:require-macros [cljs.core.async.macros :refer [go go-loop]]))
 
-
-(declare server)
+(def conns (atom {}))
 
 ;; Setup Server
 (defn create-secret-key [filename] 
@@ -49,36 +48,24 @@
                 (println "message published:" msg)))))
 
 (defn publish! [message]
-  (publish server message))
+  (publish (:server @conns) message))
 
 (defn private-publish [db message recipients]
-  (.private.publish db (clj->js {:type "post" :text message :recps recipients})
+  (.private.publish db 
+                    (clj->js {:type "post" :text message}) 
+                    (clj->js recipients) ;array of hashes
                     (fn [err msg] (if err (println "Error:" err) 
                                       (println "private message posted")))))
 
-(comment
-  ;; Blobs
+;; Queries
+(defn query-read [db query return-chan]
+  "returns contents of query response to return channel"
+  (pull (.query.read db query)
+        (.collect pull  (fn [err ary] (if err (js/console.log err) 
+                                          (put! return-chan ary)))))) 
 
-(comment
 
-  (defn read-file->chan [path] 
-    "returns channel with file contents"
-    (let [fs (node/require "fs") 
-          c (chan)]
-      (.readFile fs path "utf8" (fn [err data] (go (>! c data)))) 
-      c)) 
-
-  (defn create-read-stream [path]
-    (let [out (async/chan)
-          stream (.createReadStream fs path)]
-      (.on stream "close" #(async/close! out))
-      (.on stream "data" #(async/put!  out %))
-      out))
-
-  (defn want-blob [db blob-id])
-  (defn get-blob [db blob-id]
-    (pull
-     (.get db blob-id)
-     (.collect pull (fn [err blob] (if err (println "Error: " err)
-                                       (slurp blob)))))))
-)
+(defn query! [search]
+  (query-read (:server @conns) 
+              (clj->js search)
+              (:send-ch @conns)))

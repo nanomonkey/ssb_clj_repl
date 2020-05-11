@@ -37,9 +37,9 @@
 (defn landing-pg-handler [ring-req]
   (debugf "Landing page handler")
   (-> [:html
-       [:header "Content-Type: text/html"]
+       [:head "Content-Type: text/html"]
        [:body
-        [:h1 "Sente reference example"]
+        [:h1 "SSB Clojurescript REPL"]
         [:p "An Ajax/WebSocket" [:strong " (random choice!)"] " has been configured for this example"]
         [:hr]
         [:p [:strong "Step 1: "] " try hitting the buttons:"]
@@ -49,6 +49,10 @@
 
         [:p [:strong "Step 2: "] " observe std-out (for server output) and below (for client output):"]
         [:textarea#output {:style "width: 100%; height: 200px;"}]
+        ;;
+
+        [:p [:strong "Error Messages"]]
+        [:textarea#errors {:style "width: 100%; height: 200px;"}]
         ;;
 
         [:hr]
@@ -61,21 +65,26 @@
 
         [:hr]
         [:h2 "Step 4: want to re-randomize Ajax/WebSocket connection type?"]
-;        [:p "Hit your browser's reload/refresh button"]
+        [:p "Hit your browser's reload/refresh button"]
+        ;;
 
-[:hr]
-        [:h2 "Step 5: Post Message"]
-        [:p  "The server can use this id to send events to *you* specifically."]
+        [:hr]
+        [:h2 "Step 5: Post Message to SSB"]
         [:p
          [:input#input-post {:type :text :placeholder "Message text..."}]
          [:button#btn-post {:type "button"} "Post!"]]
 
+        [:hr]
+        [:h2 "Step 6: Query Feeds"]
+        [:p
+         [:input#query-string {:type :text :placeholder "Query string"}]
+         [:label "Query limit:"] [:input#query-limit {:type :number :placeholder 10}]
+         [:labe "Message type"] [:select-options {:id "query-type"} ["all" "post" "about" "likes"] "post"]
+         [:button#btn-query {:type "button"} "Query Database"]]
+
         [:script {:src "js/main.js"}]    ; Include our cljs target
-        ]]
-      (hiccups/html)
-     ;; (m-resp/ok)
-     ;; (m-resp/content-type "text/html")
-      ))
+             ]]
+      (hiccups/html)))
 
 (defn login-handler
   "Here's where you'll add your server-side login/auth procedure (Friend, etc.).
@@ -89,7 +98,7 @@
 
 
 
-(let [;; Serializtion format, must use same val for client + server:
+(let [;; Serialization format, must use same val for client + server:
       packer :edn ; Default packer, a good choice in most cases
       ;; (sente-transit/get-flexi-packer :edn) ; Experimental, needs Transit dep
       {:keys [ch-recv send-fn ajax-post-fn ajax-get-or-ws-handshake-fn
@@ -144,6 +153,9 @@
                   :resave            true
                   :cookie            {}
                   :store             (.MemoryStore express-session)
+
+
+
                   :saveUninitialized true}))
       (.use (.urlencoded body-parser
                          #js {:extended false}))
@@ -194,13 +206,24 @@
       (?reply-fn {:umatched-event-as-echoed-from-from-server event}))))
 
 (defmethod -event-msg-handler
-  :post
+  :ssb/post
   [{:as ev-msg :keys [event id ?data ring-req ?reply-fn send-fn]}]
   (let [session (:session ring-req)
         uid     (:uid     session)
         msg (:msg ?data)]
     (debugf "Post event: %s" event)
     (ssb/publish! {:content msg :type "post"})
+    (when ?reply-fn
+      (?reply-fn {:post-event ?data}))))
+
+(defmethod -event-msg-handler
+  :search
+  [{:as ev-msg :keys [event id ?data ring-req ?reply-fn send-fn]}]
+  (let [session (:session ring-req)
+        uid     (:uid     session)
+        search (:search ?data)]
+    (debugf "Search event: %s" event)
+    (ssb/query! {:content search :type "query"})
     (when ?reply-fn
       (?reply-fn {:post-event ?data}))))
 
@@ -214,7 +237,7 @@
           (sente/start-server-chsk-router!
            ch-chsk event-msg-handler)))
 
-;;;; Some server>user async push examples
+;;;;server>user async push 
 
 (defn start-example-broadcaster!
   "As an example of server>user async pushes, setup a loop to broadcast an
@@ -244,6 +267,13 @@
     (doseq [i (range 100)]
       (chsk-send! uid [:fast-push/is-fast (str "hello " i "!!")]))))
 
+(defn ws-send-ch [ch]
+  "continuously sends content from supplied channel"
+  (go-loop []
+    (chsk-send! (<! ch))
+  (recur)))
+
+
 (comment (test-fast-server>user-pushes))
 
 ;;;; Init stuff
@@ -259,9 +289,10 @@
     (reset! web-server_ server-map)))
 
 (defn stop!  []  (stop-router!)  (stop-web-server!))
-(defn start! [] (start-router!) (start-web-server!) (start-example-broadcaster!))
-;; (defonce _start-once (start!))
+(defn start! [] (start-router!) (start-web-server!))
 
+;; (start-example-broadcaster!)
+;; (defonce _start-once (start!))
 
 (comment
 (defn -main [& _]

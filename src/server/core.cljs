@@ -2,6 +2,7 @@
   (:require [cljs.core.async :refer (chan put! take! close! timeout >! <!)]
             [goog.object :as gobj]
             [server.ws :as ws]
+            [server.ssb :as ssb]
             ["ssb-server" :as ssb-server]
             ["ssb-server/plugins/master" :as ssb-master]
             ["ssb-gossip" :as ssb-gossip]
@@ -38,11 +39,10 @@
                                                 (println "error: " err)
                                                 (println "message published:" msg)))))
 
-(defn publish [db {:keys [content type private-recipients]}]
+(defn publish [db {:keys [content type]}]
   "publish with full options of type and recipients"
   (.publish db (clj->js (conj {:type type 
-                               :content content}
-                              (if private-recipients {:recps private-recipients}))) 
+                               :content content})) 
             (fn [err msg]
               (if err 
                 (println "error: " err)
@@ -297,6 +297,25 @@
   ([] (cb println))
   ([func] (fn [err msg] (if err (println "Error: " err) (func msg)))))
 
+(defn cb->chs [error-chan return-chan]
+  (fn [err msg] (if err (>! err error-chan)
+                    (>! msg return-chan))))
+
+(defn pull->chans
+  "Convert a pull-stream source into a channel"
+  ([source] (pull->chan (chan) source))
+  ([error-ch return-ch source]
+   (source nil (fn read [err val]
+                 (if err
+                   (go 
+                     (put! error-ch err))
+                   (go
+                     (put! return-ch val
+                           #(if %
+                              (source nil read)))))))))
+
+
+
 (defn threads [db message-id] 
   "doesn't quite work..."
   (pull (.links db #js{:values true :rel 'root' :dest message-id}) (cb)))
@@ -330,6 +349,37 @@
   (println "------")
   (read-ch chan))
 
+;; Blobs
+
+(defn read-file->chan [path] 
+  "returns channel with file contents"
+  (let [c (chan)]
+    (.readFile fs path "utf8" (fn [err data] (go (>! c data)))) 
+    c)) 
+
+(defn create-read-stream [path]
+  (let [out (chan)
+        stream (.createReadStream fs path)]
+    (.on stream "close" #(close! out))
+    (.on stream "data" #(put!  out %))
+    out))
+
+(defn list-blobs [db] (.ls db))
+
+(defn want-blob [db blob-id] (.want db blob-id))
+
+(defn has-blob? [db blob-id cb] 
+  (pull (.has db blob-id)
+        (.collect pull (fn [err has?] (if err (println "Error: " err)
+                                          (cb has?))))))
+
+(defn get-blob [db blob-id cb]
+  (pull
+   (.get db blob-id)
+   (.collect pull (fn [err blob] (if err (println "Error: " err)
+                                     (cb blob))))))
+
+;; Setup and start Server
 (defn start-server [config-directory]
   (let [config (ssb-config config-directory nil)
         plugins (do (.use ssb-server ssb-master)
@@ -346,6 +396,7 @@
      :id id}))
 
 ;; Main Loop
+
 (defn main [& args]
   (let [db-conn (start-server "/.ssb")
         server (:server db-conn)
@@ -354,7 +405,13 @@
         msg-ch (chan 5)
         recd-ch (chan 5)
         send-ch (chan 5)]
-    (ws/start!)))
+    (reset! ssb/conns {:server server
+                       :id id
+                       :error-ch error-ch
+                       :recd-ch recd-ch
+                       :send-ch send-ch})
+    (ws/start!)
+    (ws/ws-send-ch send-ch)))
 
 (defn reload! []
   (js/console.log "re-starting server"))
