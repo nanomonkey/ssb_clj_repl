@@ -1,5 +1,5 @@
 (ns server.core
-  (:require [cljs.core.async :refer (chan put! take! close! timeout >! <!)]
+  (:require [cljs.core.async :refer (go-loop pub sub chan put! take! close! timeout >! <!)]
             [goog.object :as gobj]
             [server.ws :as ws]
             [server.ssb :as ssb]
@@ -65,11 +65,6 @@
  ;;(post-reply server "Baam!!" root branch mentions)
 )
 
-(defn parse-json [msg] 
-  (js->clj msg :keywordize-keys true))
-
-(defn get-id [server]
-  (:id (parse-json (.whoami server))))
 
 
 ;;{ type: 'post', text: String, channel: String, root: MsgLink, branch: MsgLink|MsgLinks, recps: FeedLinks, mentions: Links }
@@ -184,6 +179,7 @@
   "update the version integer to rebuild index"
   (.use db query-name (fv-query version opt)))
 
+
 ;;SSB-about
 (defn about-name [db id]
   (let [channel (chan)]
@@ -251,10 +247,6 @@
 
 ;(take! (query-read server last-10-posts) println)
 
-(defn query-flatten [db query]
-  (pull (.query.read db query)
-        (.collect pull  (fn [err ary] (js/console.log (parse-json ary))))))
-
 
 (defn destructure-by-type [content type]
   "destructures content by known type, else uses js->clj recursive conversion"
@@ -321,13 +313,6 @@
   (pull (.links db #js{:values true :rel 'root' :dest message-id}) (cb)))
 
 
-(def latest-message (atom ""))
-(defn get-latest-message [db]
-  (take! (query-read db
-                     (clj->js {:query [{:$filter {:value {:content {:type "post"}}}}] 
-                               :limit 1 :reverse true})) 
-         #(reset! latest-message (first (parse-json %)))))
-
 (defn thread-read [db message-id]
   "returns channel with contents of query response"
   (let [c (chan)]
@@ -336,18 +321,6 @@
                                             (put! c ary)))))
     c)) 
 
-
-(defn channel-contents [channel]
-  (let [contents (atom nil)]
-    (while (not contents)
-      (take! channel #(reset! contents (parse-json %))))
-    @contents))
-
-
-(defn read-ch [chan]
-  (take! chan println)
-  (println "------")
-  (read-ch chan))
 
 ;; Blobs
 
@@ -379,39 +352,15 @@
    (.collect pull (fn [err blob] (if err (println "Error: " err)
                                      (cb blob))))))
 
-;; Setup and start Server
-(defn start-server [config-directory]
-  (let [config (ssb-config config-directory nil)
-        plugins (do (.use ssb-server ssb-master)
-                    (.use ssb-server ssb-gossip)
-                    (.use ssb-server ssb-replicate)
-                    (.use ssb-server ssb-query)
-                    (.use ssb-server ssb-backlinks)
-                    (.use ssb-server ssb-about))
-        server (ssb-server config)
-        id (get-id server)]
-    (js/console.log "server started")
-    (js/console.log "Logged in as:" id)
-    {:server server
-     :id id}))
 
 ;; Main Loop
 
 (defn main [& args]
-  (let [db-conn (start-server "/.ssb")
+  (let [db-conn (ssb/start-server "/.ssb")
         server (:server db-conn)
-        id (:id db-conn)
-        error-ch (chan 5)
-        msg-ch (chan 5)
-        recd-ch (chan 5)
-        send-ch (chan 5)]
-    (reset! ssb/conns {:server server
-                       :id id
-                       :error-ch error-ch
-                       :recd-ch recd-ch
-                       :send-ch send-ch})
-    (ws/start!)
-    (ws/ws-send-ch send-ch)))
+        id (:id db-conn)]
+    (reset! ssb/conns {id {:server server}})
+    (ws/start!)))
 
 (defn reload! []
   (js/console.log "re-starting server"))

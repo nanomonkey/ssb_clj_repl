@@ -140,7 +140,7 @@
             ;;; Use any login procedure you'd like. Here we'll trigger an Ajax
             ;;; POST request that resets our server-side session. Then we ask
             ;;; our channel socket to reconnect, thereby picking up the new
-            ;;; session.
+            ;;; session
 
         (sente/ajax-lite "/login"
                          {:method :post

@@ -2,10 +2,11 @@
   "Sente based web socket"
   (:require
    [server.ssb :as ssb]
+   [server.message-bus :as bus]
    ;;[cljs.nodejs        :as nodejs]
    [clojure.string     :as str]
    [hiccups.runtime    :as hiccupsrt]
-   [cljs.core.async    :as async  :refer (<! >! put! chan)]
+   [cljs.core.async    :as async  :refer (<! >! put! take! chan)]
    [taoensso.encore    :as encore :refer ()]
    [taoensso.timbre    :as timbre :refer-macros (tracef debugf infof warnf errorf)]
    [taoensso.sente     :as sente]
@@ -104,7 +105,8 @@
       {:keys [ch-recv send-fn ajax-post-fn ajax-get-or-ws-handshake-fn
               connected-uids]}
       (sente-express/make-express-channel-socket-server! {:packer packer
-                                                          :user-id-fn (fn [ring-req] (aget (:body ring-req) "session" "uid"))})]
+                                                          :user-id-fn 
+                                                          (fn [ring-req] (aget (:body ring-req) "session" "uid"))})]
   (def ajax-post                ajax-post-fn)
   (def ajax-get-or-ws-handshake ajax-get-or-ws-handshake-fn)
   (def ch-chsk                  ch-recv) ; ChannelSocket's receive channel
@@ -212,20 +214,29 @@
         uid     (:uid     session)
         msg (:msg ?data)]
     (debugf "Post event: %s" event)
-    (ssb/publish! {:content msg :type "post"})
-    (when ?reply-fn
-      (?reply-fn {:post-event ?data}))))
+    (bus/dispatch! bus/msg-ch :add-message msg)))
 
 (defmethod -event-msg-handler
-  :search
+  :ssb/search
   [{:as ev-msg :keys [event id ?data ring-req ?reply-fn send-fn]}]
   (let [session (:session ring-req)
         uid     (:uid     session)
-        search (:search ?data)]
+        query (:query ?data)]
     (debugf "Search event: %s" event)
-    (ssb/query! {:content search :type "query"})
+    (ssb/query uid query)
     (when ?reply-fn
       (?reply-fn {:post-event ?data}))))
+
+;; Message Bus Handlers
+
+(bus/handle! bus/msg-bus :error
+             (fn [uid message] 
+               (chsk-send! uid [:ssb/error {:message message}])))
+
+(bus/handle! bus/msg-bus :response
+             (fn [uid message]
+               (chsk-send! uid [:ssb/response {:message message}])))
+
 
 ;;;; Sente event router (our `event-msg-handler` loop)
 
@@ -272,7 +283,6 @@
   (go-loop []
     (chsk-send! (<! ch))
   (recur)))
-
 
 (comment (test-fast-server>user-pushes))
 

@@ -1,5 +1,6 @@
 (ns server.ssb
   (:require [cljs.core.async :refer (chan put! take! close! timeout >! <!)]
+            [server.message-bus :as bus]
             [goog.object :as gobj]
             ["ssb-server" :as ssb-server]
             ["ssb-server/plugins/master" :as ssb-master]
@@ -24,31 +25,44 @@
   "Creates secret key file if one doesn't alread exist at filename path."
   (. ssb-keys loadOrCreateSync filename))
 
-(defn start-server []
+(defn start-server
   "returns db connection"
-  (let [config (ssb-config "/.ssb" nil)
-        plugins  (do
-                   (.use ssb-server ssb-master)
-                   (.use ssb-server ssb-gossip)
-                   (.use ssb-server ssb-replicate)
-                   (.use ssb-server ssb-query)
-                   (.use ssb-server ssb-backlinks)
-                   (.use ssb-server ssb-about))
-        server (ssb-server config)]
-    server))
+  ([] (start-server "/.ssb"))
+  ([config-path] (start-server config-path [ssb-master ssb-gossip ssb-replicate 
+                                            ssb-query ssb-backlinks ssb-about]))
+  ([config-path plugins]
+   (let [config (ssb-config config-path nil)
+         _  (apply #(.use ssb-server %) plugins)
+         server (ssb-server config)]
+     server)))
+
+
+(defn parse-json [msg] 
+  (js->clj msg :keywordize-keys true))
+
+(defn get-id [db]
+  (:id (parse-json (.whoami db))))
+
+;; Pull stream to message bus
+(defn pull->bus
+  "take a pull-stream source and drop it into a message bus channel"
+  ([source] (pull->bus bus/msg-ch :response source))
+  ([msg-ch response-key source]
+   (source nil (fn read [err val]
+                 (if err
+                   (bus/dispatch! :error err)
+                   (bus/dispatch! response-key val))))))
+
 
 ;; Publish to database
-(defn publish [db {:keys [content type]}]
+(defn publish! [db {:keys [content type]}]
   "publish with full options of type and recipients"
   (.publish db (clj->js (conj {:type type 
                                :content content})) 
             (fn [err msg]
-              (if err 
-                (println "error: " err)
-                (println "message published:" msg)))))
-
-(defn publish! [message]
-  (publish (:server @conns) message))
+              (if err
+                (bus/dispatch! bus/msg-ch :error err)
+                (bus/dispatch! bus/msg-ch :post-event (js->clj msg))))))
 
 (defn private-publish [db message recipients]
   (.private.publish db 
@@ -57,15 +71,47 @@
                     (fn [err msg] (if err (println "Error:" err) 
                                       (println "private message posted")))))
 
+;; get message
+(defn get-message [db msg-id]
+  (pull
+   (.get db msg-id)
+   (.collect pull (fn [err msg]
+                    (if err
+                      (bus/dispatch! bus/msg-ch :error err)
+                      (bus/dispatch! bus/msg-ch :reply {:id msg-id   ;;necessary?
+                                                          :msg (js->clj msg)}))))))
+
+
 ;; Queries
-(defn query-read [db query return-chan]
-  "returns contents of query response to return channel"
+(defn query [db query]
   (pull (.query.read db query)
-        (.collect pull  (fn [err ary] (if err (js/console.log err) 
-                                          (put! return-chan ary)))))) 
+        (.collect pull  (fn [err ary] (if err
+                                        (bus/dispatch! bus/msg-ch :error err)
+                                        (bus/dispatch! bus/msg-ch :query-response ary)))))) 
 
 
-(defn query! [search]
-  (query-read (:server @conns) 
-              (clj->js search)
-              (:send-ch @conns)))
+;; Blobs
+(comment
+
+  (defn blobs-get [db hash-id cb-fn]
+    (pull (.blobs.get db hash-id)
+          (.collect pull (fn [err values] (if err (println "Error getting blob: " err)
+                                              (cb-fn values))))))
+  (defn blobs-want [db hash-id cb-fn]
+    (blobs.want db hash-id (fn [err] (if err (println err)
+                                         (blobs-get db hash-id cb-fn)))))
+
+)
+
+
+;; Message bus Handlers
+;; :create, :update, :delete, :query, :get, :respond, :private
+
+(bus/handle! bus/msg-bus :add-message
+             (fn [db content]
+               (publish! db {:type "post" :content content})))
+
+(bus/handle! bus/msg-bus :get
+             (fn [db msg-id]
+               (get-message db msg-id)))
+
