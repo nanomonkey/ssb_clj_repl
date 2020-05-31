@@ -18,7 +18,7 @@
             ["flumedb" :as flumedb])
   (:require-macros [cljs.core.async.macros :refer [go go-loop]]))
 
-(def conns (atom {}))
+(def db-conns (atom {}))
 
 ;; Setup Server
 (defn create-secret-key [filename] 
@@ -107,11 +107,17 @@
 ;; Message bus Handlers
 ;; :create, :update, :delete, :query, :get, :respond, :private
 
+(bus/handle! bus/msg-bus :server-start
+             (fn [user-id]
+               (swap! db-conns assoc user-id (start-server))))
+
 (bus/handle! bus/msg-bus :add-message
-             (fn [db content]
-               (publish! db {:type "post" :content content})))
+             (fn [{:keys [uid msg]}]
+               (if-let [server (get @db-conns uid)]
+                 (println "UID: " uid "content: " content)
+                 (println "Error getting server")))) ;; (publish! server {:content msg :type "post")
 
 (bus/handle! bus/msg-bus :get
-             (fn [db msg-id]
-               (get-message db msg-id)))
+             (fn [uid msg-id]
+               (get-message (get @db-conns uid) msg-id)))
 

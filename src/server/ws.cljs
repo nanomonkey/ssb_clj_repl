@@ -87,17 +87,6 @@
              ]]
       (hiccups/html)))
 
-(defn login-handler
-  "Here's where you'll add your server-side login/auth procedure (Friend, etc.).
-  In our simplified example we'll just always successfully authenticate the user
-  with whatever user-id they provided in the auth request."
-  [ring-req]
-  (let [{:keys [session params]} ring-req
-        {:keys [user-id]}        params]
-    (debugf "Login request: %s" params)
-    {:status 200 :session (assoc session :uid user-id)}))
-
-
 
 (let [;; Serialization format, must use same val for client + server:
       packer :edn ; Default packer, a good choice in most cases
@@ -124,6 +113,7 @@
         user-id     (aget body "user-id")]
     (debugf "Login request: %s" user-id)
     (aset req-session "uid" user-id)
+    (bus/dispatch! bus/msg-ch :server-start user-id) ;;TODO actually take login information for SSB
     (.send res "Success")))
 
 (defn routes [express-app]
@@ -214,7 +204,8 @@
         uid     (:uid     session)
         msg (:msg ?data)]
     (debugf "Post event: %s" event)
-    (bus/dispatch! bus/msg-ch :add-message msg)))
+   ; (bus/dispatch! bus/msg-ch :add-message {:uid uid :msg msg})
+    (?reply-fn (ssb/publish!  ))))
 
 (defmethod -event-msg-handler
   :ssb/search
@@ -230,8 +221,8 @@
 ;; Message Bus Handlers
 
 (bus/handle! bus/msg-bus :error
-             (fn [uid message] 
-               (chsk-send! uid [:ssb/error {:message message}])))
+             (fn [{:keys [uid error]}] 
+               (chsk-send! uid [:ssb/error-event {:message error}])))
 
 (bus/handle! bus/msg-bus :response
              (fn [uid message]
@@ -278,10 +269,10 @@
     (doseq [i (range 100)]
       (chsk-send! uid [:fast-push/is-fast (str "hello " i "!!")]))))
 
-(defn ws-send-ch [ch]
+(defn ws-send-ch [event-type ch]
   "continuously sends content from supplied channel"
   (go-loop []
-    (chsk-send! (<! ch))
+    (chsk-send! [event-type (<! ch)])
   (recur)))
 
 (comment (test-fast-server>user-pushes))

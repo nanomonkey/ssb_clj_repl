@@ -65,24 +65,27 @@
     (->output! "Channel socket successfully established!")
     (->output! "Channel socket state change: %s" ?data)))
 
-(defmethod -event-msg-handler :chsk/recv
-  [{:as ev-msg :keys [?data]}]
-  (->output! "Push event from server: %s" ?data))
-
 (defmethod -event-msg-handler :chsk/handshake
   [{:as ev-msg :keys [?data]}]
   (let [[?uid ?csrf-token ?handshake-data] ?data]
     (->output! "Handshake: %s" ?data)))
 
-(defmethod -event-msg-handler :post-event
+(defmulti chsk-recv (fn [id ?data] id))
+
+(defmethod -event-msg-handler :chsk/recv
   [{:as ev-msg :keys [?data]}]
+  (->output! "Push event from server: %s" ?data)
+  (chsk-recv (?data 0) (?data 1)))
+
+;; recieved message handlers
+(defmethod chsk-recv :post-event
+  [id {:as ev-msg :keys [?data]}]
   (let [[?uid ?csrf-token ?handshake-data ?msg] ?data]
     (->output! "Message Posted: %s" ?msg)))
 
-(defmethod -event-msg-handler :error-event
-  [{:as ev-msg :keys [?data]}]
-  (let [[?uid ?csrf-token ?handshake-data ?msg] ?data]
-    (->errors-put! "Error: %s" ?msg)))
+(defmethod chsk-recv :ssb/error-event
+  [id {:as ?data :keys [error]}]
+  (->errors-put! "Error: %s" error))
 
 (defmethod -event-msg-handler :search-result
  [{:as ev-msg :keys [?data]}]
