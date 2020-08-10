@@ -40,15 +40,10 @@
   (-> [:html
        [:head "Content-Type: text/html"]
        [:body
-        [:h1 "SSB Clojurescript REPL"]
-        [:p "An Ajax/WebSocket" [:strong " (random choice!)"] " has been configured for this example"]
+        [:h1 "SSB Navigator"]
         [:hr]
-        [:p [:strong "Step 1: "] " try hitting the buttons:"]
-        [:button#btn1 {:type "button"} "chsk-send! (w/o reply)"]
-        [:button#btn2 {:type "button"} "chsk-send! (with reply)"]
-        ;;
 
-        [:p [:strong "Step 2: "] " observe std-out (for server output) and below (for client output):"]
+        [:p [:strong "Server Response"] ":"]
         [:textarea#output {:style "width: 100%; height: 200px;"}]
         ;;
 
@@ -57,30 +52,26 @@
         ;;
 
         [:hr]
-        [:h2 "Step 3: try login with a user-id"]
-        [:p  "The server can use this id to send events to *you* specifically."]
+        [:h2 "Login"]
         [:p
          [:input#input-login {:type :text :placeholder "User-id"}]
+         [:input#input-ssb-config {:type :text :value "/.ssb"}] 
          [:button#btn-login {:type "button"} "Secure login!"]]
         ;;
 
-        [:hr]
-        [:h2 "Step 4: want to re-randomize Ajax/WebSocket connection type?"]
-        [:p "Hit your browser's reload/refresh button"]
-        ;;
 
         [:hr]
-        [:h2 "Step 5: Post Message to SSB"]
+        [:h2 "Post Message:"]
         [:p
          [:input#input-post {:type :text :placeholder "Message text..."}]
          [:button#btn-post {:type "button"} "Post!"]]
 
         [:hr]
-        [:h2 "Step 6: Query Feeds"]
+        [:h2 "Query Feeds"]
         [:p
          [:input#query-string {:type :text :placeholder "Query string"}]
          [:label "Query limit:"] [:input#query-limit {:type :number :placeholder 10}]
-         [:labe "Message type"] [:select-options {:id "query-type"} ["all" "post" "about" "likes"] "post"]
+         [:label "Message type"] [:select-options {:id "query-type"} ["all" "post" "about" "likes"] "post"]
          [:button#btn-query {:type "button"} "Query Database"]]
 
         [:script {:src "js/main.js"}]    ; Include our cljs target
@@ -110,10 +101,12 @@
   [req res]
   (let [req-session (aget req "session")
         body        (aget req "body")
-        user-id     (aget body "user-id")]
-    (debugf "Login request: %s" user-id)
-    (aset req-session "uid" user-id)
-    (bus/dispatch! bus/msg-ch :server-start user-id) ;;TODO actually take login information for SSB
+        uid     (aget body "user-id")
+        config      (aget body "config")]
+    ;(debugf "req: %s" (js->clj req :keywordize-keys true))
+    ;(debugf "res: %s" (js->clj res :keywordize-keys true))
+    (aset req-session "uid" uid)
+    (bus/dispatch! bus/msg-ch :server-start [uid config]) ;;TODO create login
     (.send res "Success")))
 
 (defn routes [express-app]
@@ -145,9 +138,6 @@
                   :resave            true
                   :cookie            {}
                   :store             (.MemoryStore express-session)
-
-
-
                   :saveUninitialized true}))
       (.use (.urlencoded body-parser
                          #js {:extended false}))
@@ -199,13 +189,11 @@
 
 (defmethod -event-msg-handler
   :ssb/post
-  [{:as ev-msg :keys [event id ?data ring-req ?reply-fn send-fn]}]
-  (let [session (:session ring-req)
-        uid     (:uid     session)
-        msg (:msg ?data)]
+  [{:as ev-msg :keys [event id ?data ring-req ?reply-fn send-fn uid]}]
+  (let [msg (:msg ?data)]
     (debugf "Post event: %s" event)
-   ; (bus/dispatch! bus/msg-ch :add-message {:uid uid :msg msg})
-    (?reply-fn (ssb/publish!  ))))
+    (debugf "ev-msg: %s" ev-msg)
+    (bus/dispatch! bus/msg-ch :add-message {:uid uid :msg msg})))
 
 (defmethod -event-msg-handler
   :ssb/search
@@ -221,11 +209,11 @@
 ;; Message Bus Handlers
 
 (bus/handle! bus/msg-bus :error
-             (fn [{:keys [uid error]}] 
-               (chsk-send! uid [:ssb/error-event {:message error}])))
+             (fn [{:keys [uid message]}] 
+               (chsk-send! uid [:ssb/error-event {:message message}])))
 
 (bus/handle! bus/msg-bus :response
-             (fn [uid message]
+             (fn [{:keys [uid message]}]
                (chsk-send! uid [:ssb/response {:message message}])))
 
 

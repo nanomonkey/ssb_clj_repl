@@ -84,8 +84,12 @@
     (->output! "Message Posted: %s" ?msg)))
 
 (defmethod chsk-recv :ssb/error-event
-  [id {:as ?data :keys [error]}]
-  (->errors-put! "Error: %s" error))
+  [id {:as ?data :keys [message]}]
+  (->errors-put! "Error: %s" message))
+
+(defmethod chsk-recv :ssb/response
+  [id {:as ?data :keys [message]}]
+  (->output! "SSB-response: %s" message))
 
 (defmethod -event-msg-handler :search-result
  [{:as ev-msg :keys [?data]}]
@@ -104,8 +108,9 @@
            ch-chsk event-msg-handler)))
 
 
-;;;; UI events
+;;;; UI events ;;;;
 
+;; example buttons  TODO: remove
 (when-let [target-el (.getElementById js/document "btn1")]
   (.addEventListener target-el "click"
                      (fn [ev]
@@ -119,7 +124,20 @@
                        (chsk-send! [:example/button2 {:had-a-callback? "indeed"}] 5000
                                    (fn [cb-reply] (->output! "Callback reply: %s" cb-reply))))))
 
+;; Start SSB server with config file
+(defn btn-config-click [ev]
+  (let [config (.-value (.getElementById js/document "input-ssb-config"))]
+    (if (str/blank? config)
+      (js/alert "Please select a config file first.")
+      (do 
+        (->output! "Config selected: %s"  config)
+; (chsk-send!  [:ssb/post {:msg (str message)}] 5000 (fn [cb-reply] (->output! "Posted reply: %s" cb-reply)))
+        ))))
 
+(when-let [target-el (.getElementById js/document "btn-config")]
+  (.addEventListener target-el "click" btn-config-click))
+
+;; Post message to SSB
 (defn btn-post-click [ev]
   (let [message (.-value (.getElementById js/document "input-post"))]
     (if (str/blank? message)
@@ -134,21 +152,21 @@
   (.addEventListener target-el "click" btn-post-click))
 
 (defn btn-login-click [ev]
-  (let [user-id (.-value (.getElementById js/document "input-login"))]
-    (if (str/blank? user-id)
-      (js/alert "Please enter a user-id first")
+  (let [user-id (.-value (.getElementById js/document "input-login"))
+        config (.-value (.getElementById js/document "input-ssb-config"))] 
+    (if (or (str/blank? user-id) (str/blank? config))
+      (js/alert "Please enter a user-id, and configuration file-path first")
       (do
-        (->output! "Logging in with user-id %s" user-id)
+        (->output! "Logging in with user-id %s, and config file %s" user-id config)
 
-            ;;; Use any login procedure you'd like. Here we'll trigger an Ajax
-            ;;; POST request that resets our server-side session. Then we ask
-            ;;; our channel socket to reconnect, thereby picking up the new
-            ;;; session
+            ;;; Here we'll trigger an Ajax POST request that resets our server-side session. Then we ask
+            ;;; our channel socket to reconnect, thereby picking up the new  session.
 
         (sente/ajax-lite "/login"
                          {:method :post
                           :headers {:x-csrf-token (:csrf-token @chsk-state)}
-                          :params {:user-id    (str user-id)}}
+                          :params {:user-id    (str user-id)
+                                   :config     (str config)}}
                          (fn [ajax-resp]
                            (->output! "Ajax login response: %s" ajax-resp)
                            (let [login-successful? true ; Your logic here
