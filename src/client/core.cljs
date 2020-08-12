@@ -29,6 +29,15 @@
 
 (->errors-put! "-=[ Error Messages ]=-")
 
+(def feed-el (.getElementById js/document "feed"))
+(defn ->feed! [fmt & args]
+  (let [msg (apply encore/format fmt args)]
+    (timbre/debug msg)
+    (aset feed-el "value" (str "• " (.-value feed-el) "\n" msg))
+    (aset feed-el "scrollTop" (.-scrollHeight feed-el))))
+
+(->feed! "-=[ Feed ]=-")
+
 ;; Sente Channnels
 (let [{:keys [chsk ch-recv send-fn state]}
       (sente/make-channel-socket-client!
@@ -91,6 +100,10 @@
   [id {:as ?data :keys [message]}]
   (->output! "SSB-response: %s" message))
 
+(defmethod chsk-recv :ssb/feed
+  [id {:as ?data :keys [message]}]
+  (->feed! message))
+
 (defmethod -event-msg-handler :search-result
  [{:as ev-msg :keys [?data]}]
   (let [[?uid ?csrf-token ?handshake-data ?msg] ?data]
@@ -110,33 +123,6 @@
 
 ;;;; UI events ;;;;
 
-;; example buttons  TODO: remove
-(when-let [target-el (.getElementById js/document "btn1")]
-  (.addEventListener target-el "click"
-                     (fn [ev]
-                       (->output! "Button 1 was clicked (won't receive any reply from server)")
-                       (chsk-send! [:example/button1 {:had-a-callback? "nope"}]))))
-
-(when-let [target-el (.getElementById js/document "btn2")]
-  (.addEventListener target-el "click"
-                     (fn [ev]
-                       (->output! "Button 2 was clicked (will receive reply from server)")
-                       (chsk-send! [:example/button2 {:had-a-callback? "indeed"}] 5000
-                                   (fn [cb-reply] (->output! "Callback reply: %s" cb-reply))))))
-
-;; Start SSB server with config file
-(defn btn-config-click [ev]
-  (let [config (.-value (.getElementById js/document "input-ssb-config"))]
-    (if (str/blank? config)
-      (js/alert "Please select a config file first.")
-      (do 
-        (->output! "Config selected: %s"  config)
-; (chsk-send!  [:ssb/post {:msg (str message)}] 5000 (fn [cb-reply] (->output! "Posted reply: %s" cb-reply)))
-        ))))
-
-(when-let [target-el (.getElementById js/document "btn-config")]
-  (.addEventListener target-el "click" btn-config-click))
-
 ;; Post message to SSB
 (defn btn-post-click [ev]
   (let [message (.-value (.getElementById js/document "input-post"))]
@@ -147,9 +133,19 @@
         (chsk-send!  [:ssb/post {:msg (str message)}] 5000
                      (fn [cb-reply] (->output! "Posted reply: %s" cb-reply)))))))
 
-
 (when-let [target-el (.getElementById js/document "btn-post")]
   (.addEventListener target-el "click" btn-post-click))
+
+
+(defn btn-get-messages-click [ev]
+  (let [count (int (.-value (.getElementById js/document "input-message-cnt")))
+        query  {:query {:$filter {:value {:content {:type "post"}}}} :limit count :reverse true}]
+    (chsk-send! [:ssb/query {:msg query}] 5000 
+                (fn [cb-reply] (->output! "Posted reply: %s" cb-reply)))))
+
+(when-let [target-el (.getElementById js/document "btn-get-messages")]
+  (.addEventListener target-el "click" btn-get-messages-click))
+
 
 (defn btn-login-click [ev]
   (let [user-id (.-value (.getElementById js/document "input-login"))

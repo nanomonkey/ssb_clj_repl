@@ -80,6 +80,21 @@
                              (close! ch)))))))
    ch))
 
+
+(defn chan->pull
+  "Convert a channel into a pull-stream source"
+  [ch]
+  (fn [end f]
+    (if end
+      (f end)
+      (take! ch
+             (fn [v]
+               (if (nil? v) ; then channel has been closed
+                 (f true)   ; and we should tell the pull-stream so (only once)
+                 (f nil v)  ; otherwise pass on the value from the channel
+                 ))))))
+
+
 (defn feed->ch [db]
    (pull->chan (.createFeedStream db #js {:reverse true})))
 

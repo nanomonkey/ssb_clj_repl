@@ -66,9 +66,9 @@
     (.publish server (clj->js message) 
               (fn [err msg]
                 (if err
-                  (bus/dispatch! bus/msg-ch {:uid uid :error err})
-                  (bus/dispatch! bus/msg-ch {:uid uid :response (js->clj msg)}))))
-    (bus/dispatch! bus/msg-ch  {:uid uid :error "Unable to get server with User-id"})))
+                  (bus/dispatch! bus/msg-ch :error {:uid uid :message err})
+                  (bus/dispatch! bus/msg-ch :response {:uid uid :message (js->clj msg)}))))
+    (bus/dispatch! bus/msg-ch  :error {:uid uid :message "Unable to get server with User-id"})))
 
 (defn private-publish! [uid {:keys [content type] :as message} recipients]
   (if-let [server (get @db-conns uid)]
@@ -77,8 +77,8 @@
                       (clj->js recipients) ;array of hashes    
                       (fn [err msg]
                         (if err
-                          (bus/dispatch! bus/msg-ch {:uid uid :error err})
-                          (bus/dispatch! bus/msg-ch {:uid uid :response (js->clj msg)}))))
+                          (bus/dispatch! bus/msg-ch :error {:uid uid :message err})
+                          (bus/dispatch! bus/msg-ch :response {:uid uid :message (js->clj msg)}))))
     (bus/dispatch! bus/msg-ch {:uid uid :error "Unable to get server with User-id"})))
 
 ;; Feed stream
@@ -101,12 +101,13 @@
             (bus/dispatch! bus/msg-ch :response {:uid uid :message (js->clj msg)})))))
 
 ;; Queries
-(defn query [uid query]
-  (if-let [server  (get @db-conns uid)]
-    (pull (.query.read server query)
+(defn query! [uid query]
+  (if-let [server (get @db-conns uid)]
+    (pull (.query.read server (clj->js query))
           (.collect pull  (fn [err ary] (if err
                                           (bus/dispatch! bus/msg-ch :error {:uid uid :message err})
-                                          (bus/dispatch! bus/msg-ch :query-response {:uid uid :message ary}))))))) 
+                                          (bus/dispatch! bus/msg-ch :response {:uid uid :message ary})))))
+    (bus/dispatch! bus/msg-ch :error {:uid uid :message (str "Unable to get server with User-id: " uid )}))) 
 
 
 (defn db-call [uid {:keys [call-fn parameters]}]
@@ -130,6 +131,61 @@
 
 )
 
+;;Pull->chan
+
+
+(defn pull->chan
+  "Convert a pull-stream source into a channel"
+  ([source] (pull->chan (chan) source))
+  ([ch source]
+   (source nil (fn read [err val]
+                 (if err
+                   (close! ch)  ; TODO: really?
+                   (go
+                    (put! ch val
+                          #(if %
+                             (source nil read)
+                             (close! ch)))))))
+   ch))
+
+
+(defn chan->pull
+  "Convert a channel into a pull-stream source"
+  [ch]
+  (fn [end f]
+    (if end
+      (f end)
+      (take! ch
+             (fn [v]
+               (if (nil? v) ; then channel has been closed
+                 (f true)   ; and we should tell the pull-stream so (only once)
+                 (f nil v)  ; otherwise pass on the value from the channel
+                 ))))))
+
+
+(defn feed->bus [uid]
+  (let [feed-ch (pull->chan (.createFeedStream (get @db-conns uid) #js {:reverse true}))]
+    (go-loop []
+         (bus/dispatch! bus/msg-ch :feed {:uid uid :message (<! feed-ch )})
+      (recur))))
+
+(defn query->bus [uid query]
+  (if-let [db (get @db-conns uid)]
+    (let [ch (pull->chan (.query.read db (clj->js query)))]
+      (go-loop []
+       ;(chsk-send! uid [:ssb/feed {:message (<! ch)}])
+        (bus/dispatch! bus/msg-ch :response {:uid uid :message (<! ch)})
+        (recur))))
+  (bus/dispatch! bus/msg-ch :error {:uid uid :message (str "Can't load db using uid: " uid)}))
+
+(defn manifest->bus [uid]
+  (if-let [db (get @db-conns uid)]
+    (let [ch (pull->chan (.manifest db))]
+      (go-loop []
+       ;(chsk-send! uid [:ssb/feed {:message (<! ch)}])
+        (bus/dispatch! bus/msg-ch :feed {:uid uid :message (<! ch)})
+        (recur))))
+  (bus/dispatch! bus/msg-ch :error {:uid uid :message (str "Can't load db using uid: " uid)}))
 
 ;; Message bus Handlers
 ;; :create, :update, :delete, :query, :get, :respond, :private
@@ -143,6 +199,11 @@
                (publish! uid {:content msg :type "post"})))
 
 (bus/handle! bus/msg-bus :get
-             (fn [uid msg-id]
+             (fn [{:keys [uid msg-id]}]
                (get-message uid msg-id)))
+
+(bus/handle! bus/msg-bus :query
+             (fn [{:keys [uid msg]}]
+               (query! uid msg)))
+
 

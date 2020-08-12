@@ -45,11 +45,9 @@
 
         [:p [:strong "Server Response"] ":"]
         [:textarea#output {:style "width: 100%; height: 200px;"}]
-        ;;
 
         [:p [:strong "Error Messages"]]
         [:textarea#errors {:style "width: 100%; height: 200px;"}]
-        ;;
 
         [:hr]
         [:h2 "Login"]
@@ -57,14 +55,19 @@
          [:input#input-login {:type :text :placeholder "User-id"}]
          [:input#input-ssb-config {:type :text :value "/.ssb"}] 
          [:button#btn-login {:type "button"} "Secure login!"]]
-        ;;
-
 
         [:hr]
         [:h2 "Post Message:"]
         [:p
          [:input#input-post {:type :text :placeholder "Message text..."}]
          [:button#btn-post {:type "button"} "Post!"]]
+
+        [:hr]
+        [:h2 "Get Messages"]
+        [:p
+         [:input#input-message-cnt {:type :number :placeholder 10}]
+         [:button#btn-get-messages {:type "button"} "Get Messages!"]
+         [:textarea#feed {:style "width: 100%; height: 200px;"}]]
 
         [:hr]
         [:h2 "Query Feeds"]
@@ -196,26 +199,34 @@
     (bus/dispatch! bus/msg-ch :add-message {:uid uid :msg msg})))
 
 (defmethod -event-msg-handler
-  :ssb/search
-  [{:as ev-msg :keys [event id ?data ring-req ?reply-fn send-fn]}]
-  (let [session (:session ring-req)
-        uid     (:uid     session)
-        query (:query ?data)]
-    (debugf "Search event: %s" event)
-    (ssb/query uid query)
-    (when ?reply-fn
-      (?reply-fn {:post-event ?data}))))
+  :ssb/query
+  [{:as ev-msg :keys [event id ?data ring-req ?reply-fn send-fn uid]}]
+  (let [msg (:msg ?data)]
+    (debugf "Query event: %s" event)
+    (bus/dispatch! bus/msg-ch :query {:uid uid :msg msg}) 
+    ;(ssb/query uid msg)
+    ;(when ?reply-fn (?reply-fn {:post-event ?data}))
+    ))
 
 ;; Message Bus Handlers
 
 (bus/handle! bus/msg-bus :error
              (fn [{:keys [uid message]}] 
+               (println "Error: " message)
                (chsk-send! uid [:ssb/error-event {:message message}])))
 
 (bus/handle! bus/msg-bus :response
              (fn [{:keys [uid message]}]
                (chsk-send! uid [:ssb/response {:message message}])))
 
+(bus/handle! bus/msg-bus :feed
+             (fn [{:keys [uid message]}]
+               (chsk-send! uid [:ssb/feed {:message message}])))
+
+
+(bus/handle! bus/msg-bus :query-response
+             (fn [{:keys [uid message]}]
+               (chsk-send! uid [:ssb/query-response {:message message}])))
 
 ;;;; Sente event router (our `event-msg-handler` loop)
 
