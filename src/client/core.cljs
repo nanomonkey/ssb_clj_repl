@@ -83,7 +83,7 @@
 
 (defmethod -event-msg-handler :chsk/recv
   [{:as ev-msg :keys [?data]}]
-  (->output! "Push event from server: %s" ?data)
+  ;(->output! "Push event from server: %s" ?data)
   (chsk-recv (?data 0) (?data 1)))
 
 ;; recieved message handlers
@@ -102,7 +102,7 @@
 
 (defmethod chsk-recv :ssb/feed
   [id {:as ?data :keys [message]}]
-  (->feed! message))
+  (->feed! "* %s" message))
 
 (defmethod -event-msg-handler :search-result
  [{:as ev-msg :keys [?data]}]

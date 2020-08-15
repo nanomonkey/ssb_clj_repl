@@ -46,7 +46,29 @@
                                                          (put! out msg)))))]
     out))
 
-;; Pull-Stream to channels
+
+(defn destructure-by-type [content type]
+  "destructures js object content by known type, else uses js->clj recursive conversion"
+  (case type
+    "post" {:text (gobj/get content "content")}
+    "contact" {:follow (gobj/get content "following")
+               :blocking (gobj/get content "blocking")
+               :contact (gobj/get content "contact")}
+    (js->clj content))) 
+
+(defn flatten-msg [msg]
+  (let [key (gobj/get msg "key")
+        content (gobj/getValueByKeys msg #js ["value" "content"])
+        author (gobj/getValueByKeys msg #js ["value" "author"])]
+    (if-let [content (gobj/getValueByKeys msg #js ["value" "content"])]
+      (let [type (gobj/get content "type")]
+        (conj {:key key
+               :author author
+               :type type}
+              (destructure-by-type content type)))
+      {:key key
+       :author author
+       :type "private"})))
 
 
 
@@ -189,28 +211,6 @@
 ;(take! (query-read server last-10-posts) println)
 
 
-(defn destructure-by-type [content type]
-  "destructures content by known type, else uses js->clj recursive conversion"
-  (case type
-    "post" {:text (gobj/get content "text")}
-    "contact" {:follow (gobj/get content "following")
-               :blocking (gobj/get content "blocking")
-               :contact (gobj/get content "contact")}
-    (js->clj content))) 
-
-(defn flatten-msg [msg]
-  (let [key (gobj/get msg "key")
-        content (gobj/getValueByKeys msg #js ["value" "content"])
-        author (gobj/getValueByKeys msg #js ["value" "author"])]
-    (if-let [content (gobj/getValueByKeys msg #js ["value" "content"])]
-      (let [type (gobj/get content "type")]
-        (conj {:key key
-               :author author
-               :type type}
-              (destructure-by-type content type)))
-      {:key key
-       :author author
-       :type "private"})))
 
 (defn flatten-user-feed [db user-id]
   (pull (.createHistoryStream db #js {:id user-id})

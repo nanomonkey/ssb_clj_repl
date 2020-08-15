@@ -112,7 +112,7 @@
     (bus/dispatch! bus/msg-ch :server-start [uid config]) ;;TODO create login
     (.send res "Success")))
 
-(defn routes [express-app]
+(defn routes [^js express-app]
   (doto express-app
     (.get "/" (fn [req res] (.send res (landing-pg-handler req))))
 
@@ -126,14 +126,14 @@
     (.post "/chsk" ajax-post)
     (.post "/login" express-login-handler)
     (.use (.static express "public"))
-    (.use (fn [req res next]
+    (.use (fn [^js req res next]
             (warnf "Unhandled request: %s" (.-originalUrl req))
             (next)))))
 
-(defn wrap-defaults [express-app routes]
+(defn wrap-defaults [^js express-app ^js routes]
   (let [cookie-secret "the shiz"]
     (doto express-app
-      (.use (fn [req res next]
+      (.use (fn [^js req res next]
               (tracef "Request: %s" (.-originalUrl req))
               (next)))
       (.use (express-session
@@ -227,6 +227,13 @@
 (bus/handle! bus/msg-bus :query-response
              (fn [{:keys [uid message]}]
                (chsk-send! uid [:ssb/query-response {:message message}])))
+
+
+(bus/handle! bus/msg-bus :raw-feed
+             (fn [{:keys [uid message]}]
+               (doseq [msg message]
+                 #(chsk-send! uid  [:ssb/feed :uid uid :message  (->content msg)]))))
+
 
 ;;;; Sente event router (our `event-msg-handler` loop)
 
