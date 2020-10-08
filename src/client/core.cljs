@@ -1,13 +1,14 @@
 (ns client.core
   (:require
    [clojure.string  :as str]
+   [clojure.edn :as edn]
    [cljs.core.async :as async  :refer (<! >! put! chan)]
    [taoensso.encore :as encore :refer ()]
    [taoensso.timbre :as timbre :refer-macros (tracef debugf infof warnf errorf)]
    [taoensso.sente  :as sente  :refer (cb-success?)])
 
   (:require-macros
-   [cljs.core.async.macros :as asyncm :refer (go go-loop)]))-
+   [cljs.core.async.macros :as asyncm :refer (go go-loop)]))
 
 ;;;; Utils for logging output and errors to on-screen console
 
@@ -139,12 +140,29 @@
 
 (defn btn-get-messages-click [ev]
   (let [count (int (.-value (.getElementById js/document "input-message-cnt")))
-        query  {:query {:$filter {:value {:content {:type "post"}}}} :limit count :reverse true}]
+        query  {:query [{:$filter {:value {:content {:type "post"}}}}] :limit count :reverse true}]
     (chsk-send! [:ssb/query {:msg query}] 5000 
                 (fn [cb-reply] (->output! "Posted reply: %s" cb-reply)))))
 
 (when-let [target-el (.getElementById js/document "btn-get-messages")]
   (.addEventListener target-el "click" btn-get-messages-click))
+
+(defn btn-query-click [ev]
+  (let [map      (edn/read-string (.-value (.getElementById js/document "query-map")))
+        filter   (edn/read-string (.-value (.getElementById js/document "query-filter")))
+        reduce   (edn/read-string (.-value (.getElementById js/document "query-reduce")))
+        count    (int (.-value (.getElementById js/document "query-limit")))
+        reverse? (.-value (.getElementById js/document "query-reverse"))
+        query  {:query [(when map {:$map map})
+                        (when filter {:$filter filter}) 
+                        (when reduce {:$reduce reduce})]
+                :limit count 
+                :reverse reverse?}]
+    (chsk-send! [:ssb/query {:msg query}] 5000 
+                (fn [cb-reply] (->output! "Posted reply: %s" cb-reply)))))
+
+(when-let [target-el (.getElementById js/document "btn-query")]
+  (.addEventListener target-el "click" btn-query-click))
 
 
 (defn btn-login-click [ev]

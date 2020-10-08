@@ -23,69 +23,19 @@
   "pass dictionary of index components and return the contents of a map-reduce on sbot flumeview"
   (._flumeUse db name (fv-reduce version reduce-fn map-fn codec initial-state)))
 
-(defn feed [db]
-  (pull (.createFeedStream db #js {:reverse true}) 
-        (.collect pull (fn [err msg] (if err (js/console.log err) (js/console.log msg))))))
 
 (defn user-feed [db user-id]
   (pull (.createHistoryStream db #js {:id user-id})
         (.collect pull (fn [err msg] (if err (js/console.log err) 
                                          (js/console.log  msg))))))
 
-
-(comment
-  (feed server)
-  (user-feed server id)
-
-)
-
 (defn userfeed->chan [db user-id]
-  (let [out (chan)
+  (let [ch (chan)
         user-feed (pull (.createHistoryStream db #js {:id user-id})
                         (.collect pull (fn [err msg] (if err (js/console.log err) 
                                                          (put! out msg)))))]
-    out))
+    ch))
 
-
-(defn destructure-by-type [content type]
-  "destructures js object content by known type, else uses js->clj recursive conversion"
-  (case type
-    "post" {:text (gobj/get content "content")}
-    "contact" {:follow (gobj/get content "following")
-               :blocking (gobj/get content "blocking")
-               :contact (gobj/get content "contact")}
-    (js->clj content))) 
-
-(defn flatten-msg [msg]
-  (let [key (gobj/get msg "key")
-        content (gobj/getValueByKeys msg #js ["value" "content"])
-        author (gobj/getValueByKeys msg #js ["value" "author"])]
-    (if-let [content (gobj/getValueByKeys msg #js ["value" "content"])]
-      (let [type (gobj/get content "type")]
-        (conj {:key key
-               :author author
-               :type type}
-              (destructure-by-type content type)))
-      {:key key
-       :author author
-       :type "private"})))
-
-
-
-(comment 
-  (def error-chan (chan))
-  (def msg-chan (chan))
-  (def error-log-path "/errors.txt")
-
-  (defn split-feed [db err-chan msg-chan]
-    (pull (.createFeedStream db)
-          (.collect pull (fn [err msg] (go (if err (put! err-chan err) 
-                                             (put! msg msg-chan)))))))
-
-  (defn capture-err [err-chan]
-    (.writeFile fs  error-log  "utf8" (take! err-chan)))
-
-)
 
 
 (defn pull->chan
@@ -101,7 +51,6 @@
                              (source nil read)
                              (close! ch)))))))
    ch))
-
 
 (defn chan->pull
   "Convert a channel into a pull-stream source"
@@ -217,10 +166,11 @@
         (.collect pull (fn [err msg] (if err (js/console.log err) 
                                          (js/console.log (flatten-msg msg)))))))
 
-
 (defn friends-hop [db user-id]
   (.friends.hops db user-id (fn [err msg] (if err (js/console.log err) 
                                               (println msg)))))
+
+
 ;;(def manifest (.manifest server))
 ;;(def peers (.gossip.peers server #js {:id id}))
 

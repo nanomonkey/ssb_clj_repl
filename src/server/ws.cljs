@@ -38,7 +38,7 @@
 (defn landing-pg-handler [ring-req]
   (debugf "Landing page handler")
   (-> [:html
-       [:head "Content-Type: text/html"]
+       ;[:head "Content-Type: text/html"]
        [:body
         [:h1 "SSB Navigator"]
         [:hr]
@@ -71,14 +71,21 @@
 
         [:hr]
         [:h2 "Query Feeds"]
-        [:p
-         [:input#query-string {:type :text :placeholder "Query string"}]
-         [:label "Query limit:"] [:input#query-limit {:type :number :placeholder 10}]
-         [:label "Message type"] [:select-options {:id "query-type"} ["all" "post" "about" "likes"] "post"]
+        [:p [:label "Map"]]
+        [:p [:textarea#query-map {:rows "2" :cols "100"}]]
+        [:p [:label "Filter"]] 
+        [:p [:textarea#query-filter {:rows "2" :cols "100"} "{:value {:content {:type \"post\"}}"]] 
+        [:p [:label "Reduce"]] 
+        [:p [:textarea#query-reduce {:rows "2" :cols "100"}]]
+        [:p [:label "Limit"]]   
+        [:p [:input#query-limit {:type :number :value 10}]]
+        [:p [:label "Reverse"]
+         [:input#query-reverse {:type :checkbox :value "true"}]
          [:button#btn-query {:type "button"} "Query Database"]]
-
-        [:script {:src "js/main.js"}]    ; Include our cljs target
-             ]]
+        
+        [:hr]
+        [:script {:src "js/main.js"}]  ; Include our cljs target
+        ]] 
       (hiccups/html)))
 
 
@@ -89,7 +96,8 @@
               connected-uids]}
       (sente-express/make-express-channel-socket-server! {:packer packer
                                                           :user-id-fn 
-                                                          (fn [ring-req] (aget (:body ring-req) "session" "uid"))})]
+                                                          (fn [ring-req] 
+                                                            (aget (:body ring-req) "session" "uid"))})]
   (def ajax-post                ajax-post-fn)
   (def ajax-get-or-ws-handshake ajax-get-or-ws-handshake-fn)
   (def ch-chsk                  ch-recv) ; ChannelSocket's receive channel
@@ -191,6 +199,11 @@
       (?reply-fn {:umatched-event-as-echoed-from-from-server event}))))
 
 (defmethod -event-msg-handler
+  :chsk/ws-ping
+  [{:as ev-msg :keys [event id ?data ring-req ?reply-fn send-fn]}]
+  (println "ping"))  ;;TODO: print . without flush?
+
+(defmethod -event-msg-handler
   :ssb/post
   [{:as ev-msg :keys [event id ?data ring-req ?reply-fn send-fn uid]}]
   (let [msg (:msg ?data)]
@@ -203,6 +216,7 @@
   [{:as ev-msg :keys [event id ?data ring-req ?reply-fn send-fn uid]}]
   (let [msg (:msg ?data)]
     (debugf "Query event: %s" event)
+    (debugf "msg: %s" msg)
     (bus/dispatch! bus/msg-ch :query {:uid uid :msg msg}) 
     ;(ssb/query uid msg)
     ;(when ?reply-fn (?reply-fn {:post-event ?data}))
@@ -210,7 +224,7 @@
 
 ;; Message Bus Handlers
 
-(bus/handle! bus/msg-bus :error
+(bus/handle! bus/msg-bus :error 
              (fn [{:keys [uid message]}] 
                (println "Error: " message)
                (chsk-send! uid [:ssb/error-event {:message message}])))
@@ -221,18 +235,11 @@
 
 (bus/handle! bus/msg-bus :feed
              (fn [{:keys [uid message]}]
-               (chsk-send! uid [:ssb/feed {:message message}])))
-
+               (chsk-send! uid [:ssb/feed {:message  message}])))
 
 (bus/handle! bus/msg-bus :query-response
              (fn [{:keys [uid message]}]
                (chsk-send! uid [:ssb/query-response {:message message}])))
-
-
-(bus/handle! bus/msg-bus :raw-feed
-             (fn [{:keys [uid message]}]
-               (doseq [msg message]
-                 #(chsk-send! uid  [:ssb/feed :uid uid :message  (->content msg)]))))
 
 
 ;;;; Sente event router (our `event-msg-handler` loop)
