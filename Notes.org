@@ -1,0 +1,213 @@
+-=[ Notes ]=-
+
+* SSB Manifest
+#+BEGIN_SRC clojurescript
+
+  {:latestSequence "async", 
+   :multiserverNet {}, 
+   :gossip {:disable "sync", 
+            :ping "duplex",
+            :remove "sync", 
+            :get "sync", 
+            :enable "sync", 
+            :connect "async", 
+            :peers "sync", 
+            :disconnect "async", 
+            :changes "source", 
+            :help "sync",
+            :add "sync",
+            :reconnect "sync"}, 
+   :address "sync", 
+   :get "async", 
+   :createUserStream "source", 
+   :getLatest "async", 
+   :manifest "sync", 
+   :createWriteStream "sink", 
+   :auth "async", 
+   :backlinks {:read "source"}, 
+   :getVectorClock "async", 
+   :createHistoryStream "source", 
+   :replicate {:changes "source", 
+               :upto "source", 
+               :request "sync", 
+               :block "sync"}, 
+   :latest "source", 
+   :createFeedStream "source", 
+   :usage "sync", 
+   :createLogStream "source", 
+   :status "sync", 
+   :blobs {:get "source", 
+           :push "async", 
+           :meta "async", 
+           :getSlice "source", 
+           :ls "source", 
+           :size "async", 
+           :createWants "source", 
+           :has "async", 
+           :changes "source", 
+           :want "async", 
+           :help "sync", 
+           :add "sink", 
+           :rm "async"},
+   :messagesByType "source", 
+   :getAddress "sync", 
+   :clock "async", 
+   :seq "async", 
+   :version "sync", 
+   :query {:read "source", 
+           :explain "sync"}, 
+   :add "async", 
+   :whoami "sync", 
+   :progress "sync", 
+   :publish "async", 
+   :links "source", 
+   :multiserver {:parse "sync", 
+                 :address "sync"}, 
+   :about {:socialValue "async", 
+           :latestValue "async", 
+           :socialValues "async", 
+           :latestValues "async", 
+           :socialValueStream "source", 
+           :socialValuesStream "source", 
+           :latestValueStream "source", 
+           :read "source"}}
+#+END_SRC
+
+* Blobs
+#+BEGIN_SRC javascript
+commands: {
+    add: {
+      type: 'sink',
+      description: 'add a blob',
+      args: {
+        id: Object.assign(BlobId, {optional: true})
+      }
+    },
+    get: {
+      type: 'source',
+      description: 'get a blob',
+      args: BlobOpts
+    },
+    getSlice: {
+      type: 'source'
+,     description: 'get part of a blob',
+      args: {
+        id: BlobId,
+        size: {
+          type: 'number',
+          description: 'reject if not exactly this size',
+          optional: true
+        },
+        max: {
+          type: 'number',
+          description: 'reject if more than this size',
+          optional: true
+        },
+        start: {
+          type: 'number',
+          description: 'start stream from this byte',
+          optional: true
+        },
+        end: {
+          type: 'number',
+          description: 'stream until this byte',
+          optional: true
+        }
+      }
+    },
+    has: {
+      type: 'async',
+      description: 'check if a blob is in the local store',
+      args: BlobOpts
+    },
+    size: {
+      type: 'async',
+      description: 'get the size for a blob in the local store',
+      args: BlobOpts
+    },
+    want: {
+      type: 'async',
+      description: 'request a blob from the network, wait until found or timeout',
+      args: BlobOpts
+    },
+    push: {
+      type: 'async',
+      description: 'ask the network to take the blob, wait until at least 3 peers have it',
+      args: BlobOpts
+    },
+    rm: {
+      type: 'async',
+      description: 'remove a blob from the local store',
+      args: BlobOpts
+    },
+    ls: {
+      type: 'source',
+      description: 'list all blobs',
+      args: {
+        meta: {
+          type: 'boolean',
+          description: 'include all metadata, id, size, receive timestamp',
+          optional: true
+        },
+        long: {
+          type: 'boolean',
+          description: 'long format, like in `ls -l synonym for --meta. `',
+          optional: true
+        },
+        old: {
+          type: 'boolean',
+          description: 'include old data, default: true',
+          optional: true
+        },
+        live: {
+          type: 'boolean',
+          description: 'stream real time changes, default: false',
+          optional: true
+        }
+#+END_SRC
+
+#+BEGIN_SRC javascript
+var fs = require('fs')
+var pull = require('pull-stream')
+var toPull = require('stream-to-pull-stream')
+pull(
+  toPull.source(fs.createReadStream('./hello.txt')),
+  sbot.blobs.add(function (err, hash) {
+    // 'hash' is the hash-id of the blob
+  })
+)
+
+sbot.publish({
+  type: 'post',
+  text: 'checkout [this file!]('+hash+')',
+  mentions: [{
+    link: hash,        // the hash given by blobs.add
+    name: 'hello.txt', // optional, but recommended
+    size: 12,          // optional, but recommended
+    type: 'text/plain' // optional, but recommended
+  }]
+}, function (err, msg) {
+  // ...
+})
+
+#+END_SRC
+
+#+BEGIN_SRC javascript
+var image = document.createElement('img');
+    image.src = 'data:image/bmp;base64,'+Base64.encode(blob);
+    document.body.appendChild(image);
+
+var image = document.createElement('img');
+    
+image.src="data:image/gif;base64,R0lGODlhDwAPAKECAAAAzMzM/////wAAACwAAAAADwAPAAACIISPeQHsrZ5ModrLlN48CXF8m2iQ3YmmKqVlRtW4MLwWACH+H09wdGltaXplZCBieSBVbGVhZCBTbWFydFNhdmVyIQAAOw==";
+    
+image.width=100;
+image.height=100;
+image.alt="here should be some image";
+    
+document.body.appendChild(image);
+#+END_SRC
+
+example of how to use fileReader in clojurescript:
+http://clojurescriptmadeeasy.com/blog/cljs-read-files-line-by-line-on-nodejs.html
+* Map Filter Reduce Queries
