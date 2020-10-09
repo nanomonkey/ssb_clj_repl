@@ -189,7 +189,7 @@
             #(.about.latestValue %1 %2 %3) 
             (clj->js {:key "name" :dest id}) 
             #(bus/dispatch! bus/msg-ch :response {:uid uid :message %2})))
-
+()
 (defn about-name [uid id] 
   (if-let [^js db (get @db-conns uid)]
     (.about.latestValue db (clj->js {:key "name" :dest id}) 

@@ -211,3 +211,10 @@ document.body.appendChild(image);
 example of how to use fileReader in clojurescript:
 http://clojurescriptmadeeasy.com/blog/cljs-read-files-line-by-line-on-nodejs.html
 * Map Filter Reduce Queries
+#+BEGIN_SRC clojure
+;; count mentions
+  (bus/dispatch! bus/msg-ch :query 
+                 {:uid "aa" :msg {:query [{:$filter {:value {:content {:type "post"}}}} 
+                                          {:$map {:mentions ["value" "content" "mentions" "length"]}} 
+                                          {:$reduce {:$sum true}}]}})
+#+END_SRC
