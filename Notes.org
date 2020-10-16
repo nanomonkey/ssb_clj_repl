@@ -1,4 +1,16 @@
 -=[ Notes ]=-
+* Community Strategic Software
+- mitigating risks by assessing the needs of a community beforehand, and then mapping out production and distribution
+- removing invisible labor by making tasks visible and recordable
+- creates a lens for predicting individual and group needs, and allows for collective buying power for filling them
+- accounting, optimizing, equilibrium and interactions are all decentralized to the individual's scope and constriants 
+- wealth (assets minus liabilities) is personalized by removing capital as the only method of accounting, instead assets in other categories (community, quality of resources, safety, etc.) can be accounted for and filtered individually, as are commitments and liabilities that are not easily commodified within your community.
+- feedback loops: idealism, realism and moral relativism (?)
+- removal of revisionistic history by having immutable data logs of transactions and discussions
+- peer to peer (decentralized) "gig economy" marketplace, reputation network, collaboration tool
+- supply chain and lot tracking, providense of materials AND process/techniques, flow of value added
+- organic promotion and public funding
+- patterns of techniques, scheduling, sustainability of resource management surface within an ecosystem
 
 * SSB Manifest
 #+BEGIN_SRC clojurescript
@@ -208,6 +220,22 @@ image.alt="here should be some image";
 document.body.appendChild(image);
 #+END_SRC
 
+#+BEGIN_SRC javascript
+function onMessage(evt) {
+    if (evt.data instanceof ArrayBuffer) {
+        var length = evt.data.byteLength;
+        var blob = new Blob([evt.data],{type:'image/png'});
+        var url = URL.createObjectURL(blob);
+        var image = document.getElementById("image");
+        var img = new Image();
+        img.onload = function(){
+            var ctx = image.getContext("2d");
+            ctx.drawImage(img, 0, 0);
+        }
+        img.src = url;
+}
+#+END_SRC
+
 example of how to use fileReader in clojurescript:
 http://clojurescriptmadeeasy.com/blog/cljs-read-files-line-by-line-on-nodejs.html
 * Map Filter Reduce Queries
@@ -218,3 +246,5 @@ http://clojurescriptmadeeasy.com/blog/cljs-read-files-line-by-line-on-nodejs.htm
                                           {:$map {:mentions ["value" "content" "mentions" "length"]}} 
                                           {:$reduce {:$sum true}}]}})
 #+END_SRC
+* Testing
+- https://betweentwoparens.com/clojurescript-test-setup

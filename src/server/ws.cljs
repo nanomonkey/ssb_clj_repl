@@ -80,12 +80,19 @@
         [:p [:label "Limit"]]   
         [:p [:input#query-limit {:type :number :value 10}]]
         [:p [:label "Reverse"]
-         [:input#query-reverse {:type :checkbox :value true}]
-         [:button#btn-query {:type "button"} "Query Database"]]
+         [:input#query-reverse {:type :checkbox :value true}]]
+        [:p
+         [:button#btn-query {:type "button"} "Query Database"]
+         [:button#btn-query-explain {:type "button"} "Query Explain"]]
+        
+        [:h2 "Get Contact Name:"]
+        [:p
+         [:input#input-contact-id {:type :text :placeholder "Contact Id..."}]
+         [:button#btn-get-contact {:type "button"} "Get Name!"]]
         
         [:hr]
-        [:script {:src "js/main.js"}]  ; Include our cljs target
-        ]] 
+        [:script {:src "js/main.js"}]]  ; Include our cljs target
+        ] 
       (hiccups/html)))
 
 
@@ -216,13 +223,27 @@
   [{:as ev-msg :keys [event id ?data ring-req ?reply-fn send-fn uid]}]
   (let [msg (:msg ?data)]
     (debugf "Query event: %s" event)
-    (debugf "msg: %s" msg)
+    ;(debugf "msg: %s" msg)
     (bus/dispatch! bus/msg-ch :query {:uid uid :msg msg}) 
     ;(ssb/query uid msg)
     ;(when ?reply-fn (?reply-fn {:post-event ?data}))
     ))
 
+(defmethod -event-msg-handler
+  :ssb/query-explain
+  [{:as ev-msg :keys [event id ?data ring-req ?reply-fn send-fn uid]}]
+  (let [msg (:msg ?data)]
+    (bus/dispatch! bus/msg-ch :query-explain {:uid uid :msg msg})))
+
+
+(defmethod -event-msg-handler
+  :ssb/lookup-name
+  [{:as ev-msg :keys [event id ?data ring-req ?reply-fn send-fn uid]}]
+  (let [id (:msg ?data)]
+    (bus/dispatch! bus/msg-ch :lookup-name {:uid uid :id id})))
+
 ;; Message Bus Handlers
+;; routes data to seperate processes via tagged async channels
 
 (bus/handle! bus/msg-bus :error 
              (fn [{:keys [uid message]}] 
@@ -241,6 +262,9 @@
              (fn [{:keys [uid message]}]
                (chsk-send! uid [:ssb/query-response {:message message}])))
 
+(bus/handle! bus/msg-bus :name
+             (fn [{:keys [uid message]}]
+               (chsk-send! uid [:ssb/contact-name {:message message}])))
 
 ;;;; Sente event router (our `event-msg-handler` loop)
 

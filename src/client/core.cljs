@@ -105,10 +105,9 @@
   [id {:as ?data :keys [message]}]
   (->feed! "* %s" message))
 
-(defmethod -event-msg-handler :search-result
- [{:as ev-msg :keys [?data]}]
-  (let [[?uid ?csrf-token ?handshake-data ?msg] ?data]
-    (->output! "Search Result: %s" ?msg)))
+(defmethod chsk-recv :ssb/contact-name
+  [id {:as ?data :keys [message]}]
+  (->feed! "* %s" message))
 
 ;;;; Sente event router (our `event-msg-handler` loop)
 
@@ -165,6 +164,32 @@
 (when-let [target-el (.getElementById js/document "btn-query")]
   (.addEventListener target-el "click" btn-query-click))
 
+(defn btn-query-explain-click [ev]
+  (let [map      (edn/read-string (.-value (.getElementById js/document "query-map")))
+        filter   (edn/read-string (.-value (.getElementById js/document "query-filter")))
+        reduce   (edn/read-string (.-value (.getElementById js/document "query-reduce")))
+        count    (int (.-value (.getElementById js/document "query-limit")))
+        reverse? (boolean (.-value (.getElementById js/document "query-reverse")))
+        query  {:query (remove nil? [(when map {:$map map})
+                                     (when filter {:$filter filter}) 
+                                     (when reduce {:$reduce reduce})])
+                :limit count 
+                :reverse reverse?
+                }]
+    (chsk-send! [:ssb/query-explain {:msg query}] 5000 
+                (fn [cb-reply] (->output! "Posted reply: %s" cb-reply)))))
+
+(when-let [target-el (.getElementById js/document "btn-query-explain")]
+  (.addEventListener target-el "click" btn-query-explain-click))
+
+
+(defn btn-get-contact-click [ev]
+  (let [id (.-value (.getElementById js/document "input-contact-id"))]
+    (chsk-send! [:ssb/lookup-name {:msg id}] 500
+                (fn [cb-reply] (->output! "Posted reply: %s" cb-reply)))))
+
+(when-let [target-el (.getElementById js/document "btn-get-contact")]
+  (.addEventListener target-el "click" btn-get-contact-click))
 
 (defn btn-login-click [ev]
   (let [user-id (.-value (.getElementById js/document "input-login"))
