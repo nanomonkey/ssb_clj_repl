@@ -16,7 +16,7 @@
    ["http" :as http]
    ["express" :as express]
    ["express-ws" :as express-ws]
-   ["ws" :as ws]
+   ;["ws" :as ws]
    ["cookie-parser" :as cookie-parser]
    ["body-parser" :as body-parser]
    ["csurf" :as csurf]
@@ -91,6 +91,26 @@
          [:button#btn-get-contact {:type "button"} "Get Name!"]]
         
         [:hr]
+        
+        [:h2 "Add File to Blobstore:"]
+        [:p
+         [:input#input-file {:type :file}]
+         [:button#btn-get-file {:type "button"} "Add File!"]]
+       
+        [:h2 "Display Blob:"]
+        [:img#image {:src "" :alt "Image not yet loaded..." :width 200 :height 200}]
+        [:p
+         [:input#input-blob-id {:type :text :placeholder "Blob Id..."}]
+         [:button#btn-input-blob-id {:type "button"} "Display!"]] 
+        
+        [:hr]
+
+        [:h2 "List Blobs:"]
+        [:p
+         [:button#btn-list-blobs {:type "button"} "Get-em!"]] 
+        
+        [:hr]
+        
         [:script {:src "js/main.js"}]]  ; Include our cljs target
         ] 
       (hiccups/html)))
@@ -242,6 +262,23 @@
   (let [id (:msg ?data)]
     (bus/dispatch! bus/msg-ch :lookup-name {:uid uid :id id})))
 
+(defmethod -event-msg-handler
+  :ssb/add-file
+  [{:as ev-msg :keys [event id ?data ring-req ?reply-fn send-fn uid]}]
+  (let [file (:file ?data)]
+    (bus/dispatch! bus/msg-ch :add-file {:uid uid :file file})))
+
+(defmethod -event-msg-handler
+  :ssb/get-blob
+  [{:as ev-msg :keys [event id ?data ring-req ?reply-fn send-fn uid]}]
+  (let [blob-id (:blob-id ?data)]
+    (bus/dispatch! bus/msg-ch :get-blob {:uid uid :blob-id blob-id})))
+
+(defmethod -event-msg-handler
+  :ssb/list-blobs
+  [{:as ev-msg :keys [event id ?data ring-req ?reply-fn send-fn uid]}]
+  (bus/dispatch! bus/msg-ch :list-blobs {:uid uid}))
+
 ;; Message Bus Handlers
 ;; routes data to seperate processes via tagged async channels
 
@@ -265,6 +302,10 @@
 (bus/handle! bus/msg-bus :name
              (fn [{:keys [uid message]}]
                (chsk-send! uid [:ssb/contact-name {:message message}])))
+
+(bus/handle! bus/msg-bus :blob
+             (fn [{:keys [uid message]}]
+               (chsk-send! uid [:ssb/blob {:message message}])))
 
 ;;;; Sente event router (our `event-msg-handler` loop)
 

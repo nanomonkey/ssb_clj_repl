@@ -39,6 +39,17 @@
 
 (->feed! "-=[ Feed ]=-")
 
+(defn blob->DataURL [blob cb]
+  (doto (js/FileReader.)
+    (.onload (fn [e] (cb (.-result (.target e)))))
+        (.readAsDataURL blob)))  
+
+(def image-el (.getElementById js/document "image"))
+
+(defn ->image! [image-URL]
+  (aset image-el "src" image-URL))
+
+
 ;; Sente Channnels
 (let [{:keys [chsk ch-recv send-fn state]}
       (sente/make-channel-socket-client!
@@ -108,6 +119,10 @@
 (defmethod chsk-recv :ssb/contact-name
   [id {:as ?data :keys [message]}]
   (->feed! "* %s" message))
+
+(defmethod chsk-recv :ssb/blob
+  [id {:as ?data :keys [message]}]
+  (->image! message))
 
 ;;;; Sente event router (our `event-msg-handler` loop)
 
@@ -190,6 +205,30 @@
 
 (when-let [target-el (.getElementById js/document "btn-get-contact")]
   (.addEventListener target-el "click" btn-get-contact-click))
+
+(defn btn-get-file-click [ev]
+  (let [file (.-value (.getElementById js/document "input-file"))]
+    (chsk-send! [:ssb/add-file {:file file}] 500
+                (fn [cb-reply] (->output! "File added: %s" cb-reply)))))
+
+(when-let [target-el (.getElementById js/document "btn-get-file")]
+  (.addEventListener target-el "click" btn-get-file-click))
+
+(defn btn-input-blob-id-click [ev]
+  (let [blob-id (.-value (.getElementById js/document "input-blob-id"))]
+    (chsk-send! [:ssb/get-blob {:blob-id blob-id}] 500
+                (fn [cb-reply] (->feed! cb-reply)))))
+
+(when-let [target-el (.getElementById js/document "btn-input-blob-id")]
+  (.addEventListener target-el "click" btn-input-blob-id-click))
+
+(defn btn-list-blobs-click [ev]
+  (chsk-send! [:ssb/list-blobs {}] 500
+              (fn [cb-reply] (->feed! cb-reply))))
+
+(when-let [target-el (.getElementById js/document "btn-list-blobs")]
+  (.addEventListener target-el "click" btn-list-blobs-click))
+
 
 (defn btn-login-click [ev]
   (let [user-id (.-value (.getElementById js/document "input-login"))

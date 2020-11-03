@@ -11,6 +11,8 @@
             ["ssb-query" :as ssb-query]
             ["ssb-keys" :as ssb-keys]
             ["ssb-blobs" :as ssb-blobs]
+            ["ssb-serve-blobs" :as ssb-serve-blobs]
+            ["ssb-serve-blobs/id-to-url" :as blob-id->url]
             ["ssb-config/inject" :as ssb-config]
             ["fs" :as fs]
             ["pull-stream" :as pull]
@@ -29,7 +31,6 @@
   "Creates secret key file if one doesn't alread exists at filename path."
   (. ssb-keys loadOrCreateSync filename))
 
-
 (defonce plugins (do                           
                    (.use ssb-server ssb-master)
                    (.use ssb-server ssb-gossip)
@@ -37,7 +38,8 @@
                    (.use ssb-server ssb-query)
                    (.use ssb-server ssb-backlinks)
                    (.use ssb-server ssb-about)
-                   (.use ssb-server ssb-blobs)))
+                   (.use ssb-server ssb-blobs)
+                   (.use ssb-server ssb-serve-blobs)))
 
 (defn start-server [^String config-path]
   "returns db connection"
@@ -188,7 +190,7 @@
 
 (defn about [uid id]
   (db-async uid 
-            #(.about.latestValue %1 %2 %3) 
+            (fn [^js db parameters cb-fn] (.about.latestValue db parameters cb-fn)) 
             (clj->js {:key "name" :dest id}) 
             #(bus/dispatch! bus/msg-ch :response {:uid uid :message %2})))
 
@@ -211,8 +213,8 @@
 
 (defn lookup-name! [uid id]
   (if-let [name (get @contacts id)]
-    (bus/dispatch! bus/msg-ch :name {:uid uid :message {:id id :name name}}))
-  (find-name! uid id))
+    (bus/dispatch! bus/msg-ch :name {:uid uid :message {id name}})
+    (find-name! uid id)))
 
 (defn manifest! [uid] (db-sync uid (fn [^js db] (.manifest db))))
 (defn latest! [uid] (db-sync uid (fn [^js db] (.latestSequence db))))
@@ -220,35 +222,50 @@
 ;; Blobs
 
 (defn list-blobs [uid]
-  (db-collect uid #(.blobs.ls % (clj->js {:meta true})) :response))
+  (db-collect uid (fn [^js db] (.blobs.ls db (clj->js {:meta true}))) :response))
 
 (defn has-blob? [uid blob-id]
   (if-let [^js db (get @db-conns uid)] 
-    (.blobs.has db blob-id (fn [err value] (if err (bus/dispatch! bus/msg-ch :err {:uid uid :message (str "Error: " err)})
-                                               (bus/dispatch! bus/msg-ch :response {:uid uid :message (parse-json value)}))))
+    (.blobs.has db blob-id 
+                (fn [err value] (if err (bus/dispatch! bus/msg-ch :err {:uid uid :message (str "Error: " err)})
+                                    (bus/dispatch! bus/msg-ch :response {:uid uid :message (parse-json value)}))))
     (bus/dispatch! bus/msg-ch :error {:uid uid :message (str "Unable to get server with User-id: " uid )})))
 
-(defn blobs-get [uid hash-id cb-fn]
+(defn blobs-get! [uid hash-id cb-fn]
   (if-let [^js db (get @db-conns uid)]
-    (pull (.blobs.get db hash-id)
-          (.collect pull (fn [err values] (if err (println "Error getting blob: " err)
-                                              (cb-fn values)))))))
+    (pull (.blobs.get db (clj->js hash-id))
+          (.collect pull (fn [err values] (if err 
+                                            (bus/dispatch! bus/msg-ch :error {:uid uid :message err})
+                                            (cb-fn values)))))))
 
-(defn blobs-want [uid hash-id cb-fn]
+
+(defn blobs-want [{:as request :keys [uid hash-id cb-fn]}]
   (if-let [^js db (get @db-conns uid)]
     (.blobs.want db hash-id (fn [err] (if err (println err)
-                                         (.blobs.get db hash-id cb-fn))))
+                                         (blobs-get! uid hash-id cb-fn))))
     (bus/dispatch! bus/msg-ch :error {:uid uid :message (str "Unable to get server with User-id: " uid )})))
 
-(defn add-blob 
+(defn add-blob! 
   ([uid file-path]
-   (add-blob uid file-path (fn [err hash] (bus/dispatch! bus/msg-ch :response {:uid uid :message {:blob-added hash}}))))
+   (add-blob! uid 
+             file-path 
+             (fn [err hash] (bus/dispatch! bus/msg-ch :response {:uid uid :message {:blob-added hash}}))))
   ([uid file-path cb-fn]
    (if-let [^js db (get @db-conns uid)]
      (pull (.source to-pull (.createReadStream fs file-path))
            (.blobs.add db cb-fn))
      (bus/dispatch! bus/msg-ch :error {:uid uid :message (str "Unable to get server with User-id: " uid )}))))
 
+
+(defn list-blobs! [uid cb-fn]
+  (if-let [^js db (get @db-conns uid)]
+    (pull (.blobs.ls db)
+           (.collect pull (fn [err values] (if err 
+                                            (bus/dispatch! bus/msg-ch :error {:uid uid :message err})
+                                            (cb-fn values)))))))
+
+(defn serve-blobs! [uid blob-id cb-fn]
+  (cb-fn (blob-id->url blob-id)))
 
 ;; Message bus Handlers
 ;; possible tags: :create, :update, :delete, :query, :get, :respond, :private
@@ -280,3 +297,16 @@
 (bus/handle! bus/msg-bus :lookup-name
              (fn [{:keys [uid id]}]
                (lookup-name! uid id)))
+
+(bus/handle! bus/msg-bus :add-file
+             (fn [{:keys [uid file]}]
+               (add-blob! uid file)))
+
+(bus/handle! bus/msg-bus :get-blob
+             (fn [{:keys [uid blob-id]}]
+               (serve-blobs! uid blob-id
+                           #(bus/dispatch! bus/msg-ch :blob {:uid uid :message (js->clj %)}))))
+
+(bus/handle! bus/msg-bus :list-blobs
+             (fn [{:keys [uid]}]
+               (list-blobs! uid #(bus/dispatch! bus/msg-ch :feed {:uid uid :message %}))))

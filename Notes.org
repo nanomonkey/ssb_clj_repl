@@ -11,6 +11,37 @@
 - supply chain and lot tracking, providense of materials AND process/techniques, flow of value added
 - organic promotion and public funding
 - patterns of techniques, scheduling, sustainability of resource management surface within an ecosystem
+** Include:  
+*** Member directory for Groups
+- One place for intros
+*** Payments
+- subscription
+- p2p loans
+- commodity markets
+- gigs
+*** Knowledge Hub
+- tagged information is community aggregated
+- decision tree shows how knowledge was gathered
+*** Onboarding experience
+- documentation of tools
+- application process for groups
+*** Email digests
+- user configurable filters that get turned into SMS messages or email
+- the ability to respond via email/text to specific messages
+*** Calendar integration
+- scheduling tasks, meetings, deadlines, and other events
+*** Video integration
+- NAT traversal for streaming video or audio
+*** Analytics
+- user created reports (based on map filter reduce queries?)
+*** Automated reactions
+*** Group and subgroup membership
+- read only priviledges
+
+* Names
+Communal Dynamics
+Tools for Conviviality and an Open Conspiracy (TfCaaOC) 
+MadeFromScratch
 
 * SSB Manifest
 #+BEGIN_SRC clojurescript
@@ -221,6 +252,39 @@ document.body.appendChild(image);
 #+END_SRC
 
 #+BEGIN_SRC javascript
+//**dataURL to blob**
+function dataURLtoBlob(dataurl) {
+    var arr = dataurl.split(','), mime = arr[0].match(/:(.*?);/)[1],
+        bstr = atob(arr[1]), n = bstr.length, u8arr = new Uint8Array(n);
+    while(n--){
+        u8arr[n] = bstr.charCodeAt(n);
+    }
+    return new Blob([u8arr], {type:mime});
+}
+
+//**blob to dataURL**
+function blobToDataURL(blob, callback) {
+    var a = new FileReader();
+    a.onload = function(e) {callback(e.target.result);}
+    a.readAsDataURL(blob);
+}
+
+//test:
+var blob = dataURLtoBlob('data:text/plain;base64,YWFhYWFhYQ==');
+blobToDataURL(blob, function(dataurl){
+    console.log(dataurl);
+});
+
+#+END_SRC
+#+BEGIN_SRC clojurescript
+(defn blob->DataURL [blob cb]
+  (doto (FileReader.)
+        (.onload (fn [e] (cb (.target.-result e))))
+        (.readAsDataURL blob)))  
+
+#+END_SRC
+
+#+BEGIN_SRC javascript
 function onMessage(evt) {
     if (evt.data instanceof ArrayBuffer) {
         var length = evt.data.byteLength;
@@ -236,6 +300,34 @@ function onMessage(evt) {
 }
 #+END_SRC
 
+** Uploading files
+#+BEGIN_SRC javascript
+function sendFile() {
+            var file = document.getElementById('filename').files[0];
+            var reader = new FileReader();
+            var rawData = new ArrayBuffer();            
+            reader.loadend = function() {
+            }
+            reader.onload = function(e) {
+                rawData = e.target.result;
+                ws.send(rawData);
+                alert("the File has been transferred.")
+            }
+            reader.readAsArrayBuffer(file);
+        }
+#+END_SRC
+#+BEGIN_SRC clojurescript
+  (defn send-file []
+    (let [file (aget (.-files (.getElementById js/document 'filename')) 0)
+          reader (js/FileReader.)
+          raw_data (js/ArrayBuffer.)]
+      (aset reader "loadend" (fn [] (println "loadend"))
+      (aset reader "onload" (fn [e] 
+
+                        )))
+  )    
+
+#+END_SRC
 example of how to use fileReader in clojurescript:
 http://clojurescriptmadeeasy.com/blog/cljs-read-files-line-by-line-on-nodejs.html
 * Map Filter Reduce Queries
