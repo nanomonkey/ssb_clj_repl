@@ -40,6 +40,7 @@
 (->feed! "-=[ Feed ]=-")
 
 (defn blob->DataURL [blob cb]
+  "untested translation of"
   (doto (js/FileReader.)
     (.onload (fn [e] (cb (.-result (.target e)))))
         (.readAsDataURL blob)))  
@@ -49,6 +50,16 @@
 (defn ->image! [image-URL]
   (aset image-el "src" image-URL))
 
+(def image-div (.getElementById js/document "images"))
+
+(defn add-image [name src width height alt]
+  (let [image (.createElement js/document name)]
+    (-> image
+        (aset "src" src)
+        (aset "width" width)
+        (aset "height" height)
+        (aset "alt" alt))
+    (.appendChild image-div image)))
 
 ;; Sente Channnels
 (let [{:keys [chsk ch-recv send-fn state]}
@@ -124,6 +135,11 @@
   [id {:as ?data :keys [message]}]
   (->image! message))
 
+(defmethod chsk-recv :ssb/display
+  [id {:as ?data :keys [message]}]
+  (add-image "name" message 200 200 "alt"))
+
+
 ;;;; Sente event router (our `event-msg-handler` loop)
 
 (defonce router_ (atom nil))
@@ -197,7 +213,6 @@
 (when-let [target-el (.getElementById js/document "btn-query-explain")]
   (.addEventListener target-el "click" btn-query-explain-click))
 
-
 (defn btn-get-contact-click [ev]
   (let [id (.-value (.getElementById js/document "input-contact-id"))]
     (chsk-send! [:ssb/lookup-name {:msg id}] 500
@@ -221,6 +236,13 @@
 
 (when-let [target-el (.getElementById js/document "btn-input-blob-id")]
   (.addEventListener target-el "click" btn-input-blob-id-click))
+
+(defn btn-display-blobs-click [ev]
+  (chsk-send! [:ssb/display-blobs {}] 500
+              (fn [cb-reply] (->feed! cb-reply))))
+
+(when-let [target-el (.getElementById js/document "btn-display-blobs")]
+  (.addEventListener target-el "click" btn-display-blobs-click))
 
 (defn btn-list-blobs-click [ev]
   (chsk-send! [:ssb/list-blobs {}] 500

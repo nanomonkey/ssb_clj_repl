@@ -107,8 +107,10 @@
 
         [:h2 "List Blobs:"]
         [:p
-         [:button#btn-list-blobs {:type "button"} "Get-em!"]] 
-        
+         [:button#btn-list-blobs {:type "button"} "Get-em!"]
+         [:button#btn-display-blobs {:type "button"} "Display-em!"]] 
+        [:div#images]
+  
         [:hr]
         
         [:script {:src "js/main.js"}]]  ; Include our cljs target
@@ -129,7 +131,7 @@
   (def ajax-get-or-ws-handshake ajax-get-or-ws-handshake-fn)
   (def ch-chsk                  ch-recv) ; ChannelSocket's receive channel
   (def chsk-send!               send-fn) ; ChannelSocket's send API fn
-  (def connected-uids           connected-uids) ; Watchable, read-only atom
+  (def connected-uids           connected-uids) ; Watchable, read-only atomk
   )
 
 (defn express-login-handler
@@ -279,33 +281,25 @@
   [{:as ev-msg :keys [event id ?data ring-req ?reply-fn send-fn uid]}]
   (bus/dispatch! bus/msg-ch :list-blobs {:uid uid}))
 
+(defmethod -event-msg-handler
+  :ssb/display-blobs
+  [{:as ev-msg :keys [event id ?data ring-req ?reply-fn send-fn uid]}]
+  (bus/dispatch! bus/msg-ch :display-blobs {:uid uid}))
+
 ;; Message Bus Handlers
 ;; routes data to seperate processes via tagged async channels
 
-(bus/handle! bus/msg-bus :error 
-             (fn [{:keys [uid message]}] 
-               (println "Error: " message)
-               (chsk-send! uid [:ssb/error-event {:message message}])))
+(defonce message-handlers 
+  {:error  (fn [{:keys [uid message]}] (println "Error: " message)
+             (chsk-send! uid [:ssb/error-event {:message message}]))
+   :response (fn [{:keys [uid message]}] (chsk-send! uid [:ssb/response {:message message}]))
+   :feed (fn [{:keys [uid message]}] (chsk-send! uid [:ssb/feed {:message  message}]))
+   :query-response (fn [{:keys [uid message]}] (chsk-send! uid [:ssb/query-response {:message message}]))
+   :name (fn [{:keys [uid message]}] (chsk-send! uid [:ssb/contact-name {:message message}]))
+   :blob (fn [{:keys [uid message]}] (chsk-send! uid [:ssb/blob {:message message}]))
+   :display (fn [{:keys [uid message]}] (chsk-send! uid [:ssb/display {:message message}]))})
 
-(bus/handle! bus/msg-bus :response
-             (fn [{:keys [uid message]}]
-               (chsk-send! uid [:ssb/response {:message message}])))
-
-(bus/handle! bus/msg-bus :feed
-             (fn [{:keys [uid message]}]
-               (chsk-send! uid [:ssb/feed {:message  message}])))
-
-(bus/handle! bus/msg-bus :query-response
-             (fn [{:keys [uid message]}]
-               (chsk-send! uid [:ssb/query-response {:message message}])))
-
-(bus/handle! bus/msg-bus :name
-             (fn [{:keys [uid message]}]
-               (chsk-send! uid [:ssb/contact-name {:message message}])))
-
-(bus/handle! bus/msg-bus :blob
-             (fn [{:keys [uid message]}]
-               (chsk-send! uid [:ssb/blob {:message message}])))
+(doall (map (fn [[k v]] (bus/handle! bus/msg-bus k v)) message-handlers))
 
 ;;;; Sente event router (our `event-msg-handler` loop)
 

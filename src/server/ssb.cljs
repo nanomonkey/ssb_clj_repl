@@ -155,9 +155,10 @@
   ([uid source-fn bus-tag]
    (if-let [^js db (get @db-conns uid)]
      (pull (source-fn db)
-           (.collect pull (fn [err ary] (if err
-                                          (bus/dispatch! bus/msg-ch :error {:uid uid :message (parse-json err)})
-                                          (bus/dispatch! bus/msg-ch bus-tag {:uid uid :message (parse-json ary)})))))
+           (.collect pull (fn [err ary] 
+                            (if err
+                              (bus/dispatch! bus/msg-ch :error {:uid uid :message (parse-json err)})
+                              (bus/dispatch! bus/msg-ch bus-tag {:uid uid :message (parse-json ary)})))))
      (bus/dispatch! bus/msg-ch :error {:uid uid :message (str "Unable to get server with User-id: " uid )}))))
 
 (defn db-drain 
@@ -184,7 +185,9 @@
     (bus/dispatch! bus/msg-ch :error {:uid uid :message (str "Unable to get server with User-id: " uid )})))
 
 (defn query-collect! [uid qry] (db-collect uid (fn [^js db] (.query.read db (clj->js qry)))))
+
 (defn query-drain! [uid qry] (db-drain uid (fn [^js db] (.query.read db (clj->js qry))) :feed))
+
 (defn query-explain! [uid qry] 
   (bus/dispatch! bus/msg-ch :feed {:uid uid :message (str (parse-json (db-sync uid (fn [^js db] (.query.explain db (clj->js qry))))))}))
 
@@ -204,9 +207,11 @@
 
 (defn find-name! [uid id]
   (db-async uid
-            #(.about.latestValue %1 %2 %3)
+            (fn [^js db parameters cb] (.about.latestValue db parameters cb))
             (clj->js {:key "name" :dest id})
-            (fn [err name] (if err (bus/dispatch! bus/msg-ch :err {:uid uid :message (str "Unable to find name for id: " id)})
+            (fn [err name] (if err 
+                             (bus/dispatch! bus/msg-ch :err {:uid uid 
+                                                             :message (str "Unable to find name for id: " id)})
                                (do
                                  (swap! contacts assoc id name)
                                  (bus/dispatch! bus/msg-ch :name {:uid uid :message {id name}}))))))
@@ -217,12 +222,30 @@
     (find-name! uid id)))
 
 (defn manifest! [uid] (db-sync uid (fn [^js db] (.manifest db))))
+
 (defn latest! [uid] (db-sync uid (fn [^js db] (.latestSequence db))))
+
+(defn user-feed! [uid user-id]
+  (db-collect uid (fn [^js db] (.createHistoryStream db #js {:id user-id})) :feed))
+
+(defn msg-thread! [uid message-id]
+  (db-collect (fn [^js db] (.links db #js {:values true :rel 'root' :dest message-id})) :feed))
+
 
 ;; Blobs
 
 (defn list-blobs [uid]
   (db-collect uid (fn [^js db] (.blobs.ls db (clj->js {:meta true}))) :response))
+
+(defn display-blobs! [uid]
+  (db-drain uid (fn [^js db] (.blobs.ls db (clj->js {:meta true}))) :display))
+
+(defn list-blobs! [uid cb-fn]
+  (if-let [^js db (get @db-conns uid)]
+    (pull (.blobs.ls db)
+           (.collect pull (fn [err values] (if err 
+                                            (bus/dispatch! bus/msg-ch :error {:uid uid :message err})
+                                            (cb-fn values)))))))
 
 (defn has-blob? [uid blob-id]
   (if-let [^js db (get @db-conns uid)] 
@@ -256,57 +279,32 @@
            (.blobs.add db cb-fn))
      (bus/dispatch! bus/msg-ch :error {:uid uid :message (str "Unable to get server with User-id: " uid )}))))
 
+(defn serve-blobs! 
+  ([uid blob-id cb-fn]             ;;public image
+   (cb-fn (blob-id->url blob-id)))
+  ([uid blob-id unbox-key cb-fn]   ;; private image needs key to decrypt
+   (cb-fn (blob-id->url blob-id (clj->js {:unbox unbox-key})))))
 
-(defn list-blobs! [uid cb-fn]
-  (if-let [^js db (get @db-conns uid)]
-    (pull (.blobs.ls db)
-           (.collect pull (fn [err values] (if err 
-                                            (bus/dispatch! bus/msg-ch :error {:uid uid :message err})
-                                            (cb-fn values)))))))
-
-(defn serve-blobs! [uid blob-id cb-fn]
-  (cb-fn (blob-id->url blob-id)))
 
 ;; Message bus Handlers
 ;; possible tags: :create, :update, :delete, :query, :get, :respond, :private
 
-(bus/handle! bus/msg-bus :server-start
-             (fn [[uid config]]
-               (swap! db-conns assoc uid (start-server config))))
+(defonce message-handlers 
+  {:server-start (fn [[uid config]] (swap! db-conns assoc uid (start-server config)))
+   :add-message (fn [{:keys [uid msg]}] (publish! uid {:text msg :type "post"}))
+   :private-message (fn [{:keys [uid msg rcps]}] (private-publish! uid {:text msg :mentions rcps} rcps))
+   :get (fn [{:keys [uid msg-id]}] (get-message uid msg-id))
+   :query (fn [{:keys [uid msg]}](query-drain! uid msg))
+   :query-explain (fn [{:keys [uid msg]}] (query-explain! uid msg))
+   :lookup-name (fn [{:keys [uid id]}] (lookup-name! uid id))
+   :add-file (fn [{:keys [uid file]}] (add-blob! uid file))
+   :get-blob (fn [{:keys [uid blob-id]}]
+               (serve-blobs! uid blob-id #(bus/dispatch! bus/msg-ch :blob {:uid uid :message (js->clj %)})))
+   :list-blobs (fn [{:keys [uid]}] (list-blobs! uid #(bus/dispatch! bus/msg-ch :feed {:uid uid :message %})))
+   :display-blobs (fn [{:keys [uid]}] (display-blobs! uid))
+   :thread (fn [{:keys [uid message-id]}] (msg-thread! uid message-id))
+   :user-feed (fn [{:keys [uid user-id]}] (user-feed! uid user-id))
+   :test (fn [message] (prn message))})
 
-(bus/handle! bus/msg-bus :add-message
-             (fn [{:keys [uid msg]}]
-               (publish! uid {:text msg :type "post"})))
-
-(bus/handle! bus/msg-bus :private-message
-             (fn [{:keys [uid msg rcps]}]
-               (private-publish! uid {:text msg :mentions rcps} rcps)))
-
-(bus/handle! bus/msg-bus :get
-             (fn [{:keys [uid msg-id]}]
-               (get-message uid msg-id)))
+(doall (map (fn [[k v]] (bus/handle! bus/msg-bus k v)) message-handlers))
  
-(bus/handle! bus/msg-bus :query
-             (fn [{:keys [uid msg]}]
-               (query-drain! uid msg)))
-
-(bus/handle! bus/msg-bus :query-explain
-             (fn [{:keys [uid msg]}]
-               (query-explain! uid msg)))
-
-(bus/handle! bus/msg-bus :lookup-name
-             (fn [{:keys [uid id]}]
-               (lookup-name! uid id)))
-
-(bus/handle! bus/msg-bus :add-file
-             (fn [{:keys [uid file]}]
-               (add-blob! uid file)))
-
-(bus/handle! bus/msg-bus :get-blob
-             (fn [{:keys [uid blob-id]}]
-               (serve-blobs! uid blob-id
-                           #(bus/dispatch! bus/msg-ch :blob {:uid uid :message (js->clj %)}))))
-
-(bus/handle! bus/msg-bus :list-blobs
-             (fn [{:keys [uid]}]
-               (list-blobs! uid #(bus/dispatch! bus/msg-ch :feed {:uid uid :message %}))))

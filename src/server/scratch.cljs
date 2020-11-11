@@ -24,20 +24,6 @@
   (._flumeUse db name (fv-reduce version reduce-fn map-fn codec initial-state)))
 
 
-(defn user-feed [db user-id]
-  (pull (.createHistoryStream db #js {:id user-id})
-        (.collect pull (fn [err msg] (if err (js/console.log err) 
-                                         (js/console.log  msg))))))
-
-(defn userfeed->chan [db user-id]
-  (let [ch (chan)
-        user-feed (pull (.createHistoryStream db #js {:id user-id})
-                        (.collect pull (fn [err msg] (if err (js/console.log err) 
-                                                         (put! out msg)))))]
-    ch))
-
-
-
 (defn pull->chan
   "Convert a pull-stream source into a channel"
   ([source] (pull->chan (chan) source))
@@ -198,23 +184,6 @@
                               (source nil read)))))))))
 
 
-
-(defn threads [db message-id] 
-  "doesn't quite work..."
-  (pull (.links db #js{:values true :rel 'root' :dest message-id}) (cb)))
-
-
-(defn thread-read [db message-id]
-  "returns channel with contents of query response"
-  (let [c (chan)]
-    (pull (.links db #js{:values true :rel 'root' :dest message-id})
-          (.collect pull  (fn [err ary] (if err (js/console.log err) 
-                                            (put! c ary)))))
-    c)) 
-
-
-;; Blobs
-
 (defn read-file->chan [path] 
   "returns channel with file contents"
   (let [c (chan)]
@@ -228,17 +197,3 @@
     (.on stream "data" #(put!  out %))
     out))
 
-(defn list-blobs [db] (.ls db))
-
-(defn want-blob [db blob-id] (.want db blob-id))
-
-(defn has-blob? [db blob-id cb] 
-  (pull (.has db blob-id)
-        (.collect pull (fn [err has?] (if err (println "Error: " err)
-                                          (cb has?))))))
-
-(defn get-blob [db blob-id cb]
-  (pull
-   (.get db blob-id)
-   (.collect pull (fn [err blob] (if err (println "Error: " err)
-                                     (cb blob))))))
