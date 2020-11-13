@@ -50,16 +50,18 @@
 (defn ->image! [image-URL]
   (aset image-el "src" image-URL))
 
-(def image-div (.getElementById js/document "images"))
+(def images-div (.getElementById js/document "images"))
 
 (defn add-image [name src width height alt]
-  (let [image (.createElement js/document name)]
+  (let [image (.createElement js/document "img")]
+    (debugf "creating image with src=%s" src)
     (-> image
         (aset "src" src)
+        (aset "name" name)
         (aset "width" width)
         (aset "height" height)
         (aset "alt" alt))
-    (.appendChild image-div image)))
+    (.appendChild images-div image)))
 
 ;; Sente Channnels
 (let [{:keys [chsk ch-recv send-fn state]}
@@ -137,6 +139,7 @@
 
 (defmethod chsk-recv :ssb/display
   [id {:as ?data :keys [message]}]
+  
   (add-image "name" message 200 200 "alt"))
 
 

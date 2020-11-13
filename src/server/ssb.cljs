@@ -237,9 +237,6 @@
 (defn list-blobs [uid]
   (db-collect uid (fn [^js db] (.blobs.ls db (clj->js {:meta true}))) :response))
 
-(defn display-blobs! [uid]
-  (db-drain uid (fn [^js db] (.blobs.ls db (clj->js {:meta true}))) :display))
-
 (defn list-blobs! [uid cb-fn]
   (if-let [^js db (get @db-conns uid)]
     (pull (.blobs.ls db)
@@ -280,11 +277,19 @@
      (bus/dispatch! bus/msg-ch :error {:uid uid :message (str "Unable to get server with User-id: " uid )}))))
 
 (defn serve-blobs! 
-  ([uid blob-id cb-fn]             ;;public image
+  ([uid blob-id cb-fn]             ;;public
    (cb-fn (blob-id->url blob-id)))
-  ([uid blob-id unbox-key cb-fn]   ;; private image needs key to decrypt
+  ([uid blob-id unbox-key cb-fn]   ;; private blobs require key to decrypt
    (cb-fn (blob-id->url blob-id (clj->js {:unbox unbox-key})))))
 
+
+(defn display-blobs! [uid]
+  (if-let [^js db (get @db-conns uid)]
+    (pull (.blobs.ls db)
+          (.drain pull 
+                  (fn op? [value] (serve-blobs! uid value
+                                              #(bus/dispatch! bus/msg-ch :display {:uid uid 
+                                                                                   :message %})))))))
 
 ;; Message bus Handlers
 ;; possible tags: :create, :update, :delete, :query, :get, :respond, :private
