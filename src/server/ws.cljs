@@ -2,7 +2,7 @@
   "Sente based web socket"
   (:require
    [server.ssb :as ssb]
-   [server.message-bus :as bus]
+   [server.message-bus :refer (dispatch! handle!)]
    ;;[cljs.nodejs        :as nodejs]
    [clojure.string     :as str]
    [hiccups.runtime    :as hiccupsrt]
@@ -21,6 +21,7 @@
    ["body-parser" :as body-parser]
    ["csurf" :as csurf]
    ["express-session" :as express-session]
+   ["formidable" :as formidable]q
 
    ;; Optional, for Transit encoding:
    ;[taoensso.sente.packers.transit :as sente-transit]
@@ -65,7 +66,7 @@
         [:hr]
         [:h2 "Get Messages"]
         [:p
-         [:input#input-message-cnt {:type :number :placeholder 10}]
+         [:Input#input-message-cnt {:type :number :placeholder 10}]
          [:button#btn-get-messages {:type "button"} "Get Messages!"]
          [:textarea#feed {:style "width: 100%; height: 200px;"}]]
 
@@ -90,12 +91,16 @@
          [:input#input-contact-id {:type :text :placeholder "Contact Id..."}]
          [:button#btn-get-contact {:type "button"} "Get Name!"]]
         
-        [:hr]
-        
         [:h2 "Add File to Blobstore:"]
+
+        (comment
+          [:form {:action "/upload" :enctype "multipart/form-data" :method "post"}
+           [:input {:type :file :multiple "multiple"}] [:input {:type :submit :value "Upload"}]]
+          [:hr])
+
         [:p
          [:input#input-file {:type :file}]
-         [:button#btn-get-file {:type "button"} "Add File!"]]
+         [:button#btn-add-file {:type "button"} "Add File!"]]
        
         [:h2 "Display Blob:"]
         [:img#image {:src "" :alt "Image not yet loaded..." :width 200 :height 200}]
@@ -146,8 +151,19 @@
     ;(debugf "req: %s" (js->clj req :keywordize-keys true))
     ;(debugf "res: %s" (js->clj res :keywordize-keys true))
     (aset req-session "uid" uid)
-    (bus/dispatch! bus/msg-ch :server-start [uid config]) ;;TODO create login
+    (dispatch! :server-start [uid config]) ;;TODO create login
     (.send res "Success")))
+
+(defn express-upload-handler [req res next]
+  (let [form (formidable. #js {:multiples true})
+        uid (aget req "session" "body" "user-id")]
+    (.parse form req 
+            (fn [err fields files] (if err (next err) 
+                                       (let [filename (.-filename files)
+                                             name (.-name filename)
+                                             path (.-path filename)]
+                                         (debugf "Filename: %s Name: %s Path: %s" filename name path)
+                                         (ssb/add-blob! uid filename)))))))
 
 (defn routes [^js express-app]
   (doto express-app
@@ -162,6 +178,7 @@
     (.get "/chsk" ajax-get-or-ws-handshake)
     (.post "/chsk" ajax-post)
     (.post "/login" express-login-handler)
+    (.post "/upload" express-upload-handler)
     (.use (.static express "public"))
     (.use (fn [^js req res next]
             (warnf "Unhandled request: %s" (.-originalUrl req))
@@ -238,7 +255,7 @@
   (let [msg (:msg ?data)]
     (debugf "Post event: %s" event)
     (debugf "ev-msg: %s" ev-msg)
-    (bus/dispatch! bus/msg-ch :add-message {:uid uid :msg msg})))
+    (dispatch! :add-message {:uid uid :msg msg})))
 
 (defmethod -event-msg-handler
   :ssb/query
@@ -246,7 +263,7 @@
   (let [msg (:msg ?data)]
     (debugf "Query event: %s" event)
     ;(debugf "msg: %s" msg)
-    (bus/dispatch! bus/msg-ch :query {:uid uid :msg msg}) 
+    (dispatch! :query {:uid uid :msg msg}) 
     ;(ssb/query uid msg)
     ;(when ?reply-fn (?reply-fn {:post-event ?data}))
     ))
@@ -255,36 +272,42 @@
   :ssb/query-explain
   [{:as ev-msg :keys [event id ?data ring-req ?reply-fn send-fn uid]}]
   (let [msg (:msg ?data)]
-    (bus/dispatch! bus/msg-ch :query-explain {:uid uid :msg msg})))
+    (dispatch! :query-explain {:uid uid :msg msg})))
 
 
 (defmethod -event-msg-handler
   :ssb/lookup-name
   [{:as ev-msg :keys [event id ?data ring-req ?reply-fn send-fn uid]}]
   (let [id (:msg ?data)]
-    (bus/dispatch! bus/msg-ch :lookup-name {:uid uid :id id})))
+    (dispatch! :lookup-name {:uid uid :id id})))
 
 (defmethod -event-msg-handler
   :ssb/add-file
   [{:as ev-msg :keys [event id ?data ring-req ?reply-fn send-fn uid]}]
   (let [file (:file ?data)]
-    (bus/dispatch! bus/msg-ch :add-file {:uid uid :file file})))
+    (dispatch! :add-file {:uid uid :file file})))
 
 (defmethod -event-msg-handler
   :ssb/get-blob
   [{:as ev-msg :keys [event id ?data ring-req ?reply-fn send-fn uid]}]
   (let [blob-id (:blob-id ?data)]
-    (bus/dispatch! bus/msg-ch :get-blob {:uid uid :blob-id blob-id})))
+    (dispatch! :get-blob {:uid uid :blob-id blob-id})))
+
+(defmethod -event-msg-handler
+  :ssb/serve-blob
+  [{:as ev-msg :keys [event id ?data ring-req ?reply-fn send-fn uid]}]
+  (let [blob-id (:blob-id ?data)]
+    (dispatch! :serve-blob {:uid uid :blob-id blob-id})))
 
 (defmethod -event-msg-handler
   :ssb/list-blobs
   [{:as ev-msg :keys [event id ?data ring-req ?reply-fn send-fn uid]}]
-  (bus/dispatch! bus/msg-ch :list-blobs {:uid uid}))
+  (dispatch! :list-blobs {:uid uid}))
 
 (defmethod -event-msg-handler
   :ssb/display-blobs
   [{:as ev-msg :keys [event id ?data ring-req ?reply-fn send-fn uid]}]
-  (bus/dispatch! bus/msg-ch :display-blobs {:uid uid}))
+  (dispatch! :display-blobs {:uid uid}))
 
 ;; Message Bus Handlers
 ;; routes data to seperate processes via tagged async channels
@@ -299,7 +322,7 @@
    :blob (fn [{:keys [uid message]}] (chsk-send! uid [:ssb/blob {:message message}]))
    :display (fn [{:keys [uid message]}] (chsk-send! uid [:ssb/display {:message message}]))})
 
-(doall (map (fn [[k v]] (bus/handle! bus/msg-bus k v)) message-handlers))
+(doall (map (fn [[k v]] (handle! k v)) message-handlers))
 
 ;;;; Sente event router (our `event-msg-handler` loop)
 

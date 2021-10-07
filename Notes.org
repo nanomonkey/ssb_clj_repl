@@ -340,3 +340,19 @@ http://clojurescriptmadeeasy.com/blog/cljs-read-files-line-by-line-on-nodejs.htm
 #+END_SRC
 * Testing
 - https://betweentwoparens.com/clojurescript-test-setup
+* Reducing Transaction Costs
+** Equipment owned by Group (Firm?!)
+- usage governed by group
+** Inter-Group transactions
+- written by individuals to ssb ledger
+
+(def L-branch "└── ")
+
+* Todo
+** File upload
+- add .post "upload" route
+* SSB Plugins
+- From Staltz: Start with SecretStack, pass it the ssb-caps, and then install ssb-master, ssb-db, ssb-conn and others.
+* Dates
+- Storage options: 
+- Stick to iCal types: https://www.ietf.org/rfc/rfc5545.txt

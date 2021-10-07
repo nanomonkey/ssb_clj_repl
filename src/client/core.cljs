@@ -43,7 +43,7 @@
   "untested translation of"
   (doto (js/FileReader.)
     (.onload (fn [e] (cb (.-result (.target e)))))
-        (.readAsDataURL blob)))  
+    (.readAsDataURL blob)))  
 
 (def image-el (.getElementById js/document "image"))
 
@@ -55,12 +55,12 @@
 (defn add-image [name src width height alt]
   (let [image (.createElement js/document "img")]
     (debugf "creating image with src=%s" src)
-    (-> image
-        (aset "src" src)
-        (aset "name" name)
-        (aset "width" width)
-        (aset "height" height)
-        (aset "alt" alt))
+    (doto image
+      (aset "src" src)
+      (aset "name" name)
+      (aset "width" width)
+      (aset "height" height)
+      (aset "alt" alt))
     (.appendChild images-div image)))
 
 ;; Sente Channnels
@@ -224,17 +224,35 @@
 (when-let [target-el (.getElementById js/document "btn-get-contact")]
   (.addEventListener target-el "click" btn-get-contact-click))
 
-(defn btn-get-file-click [ev]
-  (let [file (.-value (.getElementById js/document "input-file"))]
-    (chsk-send! [:ssb/add-file {:file file}] 500
-                (fn [cb-reply] (->output! "File added: %s" cb-reply)))))
+(defn btn-add-file-change [ev]
+  (let [file (aget ev "target" "files" 0)  ;; take only the first file
+        reader (js/FileReader.)
+        onload (fn [onload-ev] (chsk-send! [:ssb/add-file {:file (.. onload-ev -target -result)}] 500
+                                           (fn [cb-reply] (->output! "File added: %s" cb-reply))))]
+    (aset reader "onload" onload)
+    (when file
+      (debugf "Filereader loaded: %s" (.-name file))
+      (.readAsDataURL reader file))))
 
-(when-let [target-el (.getElementById js/document "btn-get-file")]
-  (.addEventListener target-el "click" btn-get-file-click))
+(when-let [target-el (.getElementById js/document "input-file")]
+  (.addEventListener target-el "change" btn-add-file-change))
+
+(defn btn-add-file-click-ajax [ev]
+  "untested alternative"
+  (let [files (.-files (.getElementById js/document "input-file"))]
+    (sente/ajax-lite "/upload"
+                         {:method :post
+                          :headers {:x-csrf-token (:csrf-token @chsk-state)}
+                          :files files}
+                         (fn [ajax-resp]
+                           (->output! "Ajax login response: %s" ajax-resp)))))
+
+(when-let [target-el (.getElementById js/document "btn-add-file")]
+  (.addEventListener target-el "click" btn-add-file-click-ajax))
 
 (defn btn-input-blob-id-click [ev]
   (let [blob-id (.-value (.getElementById js/document "input-blob-id"))]
-    (chsk-send! [:ssb/get-blob {:blob-id blob-id}] 500
+    (chsk-send! [:ssb/serve-blob {:blob-id blob-id}] 500
                 (fn [cb-reply] (->feed! cb-reply)))))
 
 (when-let [target-el (.getElementById js/document "btn-input-blob-id")]
@@ -264,8 +282,7 @@
         (->output! "Logging in with user-id %s, and config file %s" user-id config)
 
             ;;; Here we'll trigger an Ajax POST request that resets our server-side session. Then we ask
-            ;;; our channel socket to reconnect, thereby picking up the new  session.
-
+            ;;; our channel socket to reconnect, thereby picking up the new  session
         (sente/ajax-lite "/login"
                          {:method :post
                           :headers {:x-csrf-token (:csrf-token @chsk-state)}

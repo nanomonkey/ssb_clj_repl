@@ -1,5 +1,11 @@
 (ns server.scratch)
 
+;; CRUT messages
+{:create (fn [{:keys [uid type content]}] (publish! uid {:type type :val val}))
+ :update (fn [{:keys [uid id changes]}] (publish! uid {:type :update 
+                                                       :root id 
+                                                       :content changes}))
+ :tombstone (fn [{:keys [uid id]}] (publish! uid {:type :tombstone :root id}))}
 
 ;; Flume-reduce
 (def default-codec
@@ -183,6 +189,18 @@
                            #(if %
                               (source nil read)))))))))
 
+(defn chan->pull
+  "Convert a channel into a pull-stream source"
+  [ch]
+  (fn [end f]
+    (if end
+      (f end)
+      (take! ch
+             (fn [v]
+               (if (nil? v) ; then channel has been closed
+                 (f true)   ; and we should tell the pull-stream so (only once)
+                 (f nil v)  ; otherwise pass on the value from the channel
+                 ))))))
 
 (defn read-file->chan [path] 
   "returns channel with file contents"
@@ -194,6 +212,5 @@
   (let [out (chan)
         stream (.createReadStream fs path)]
     (.on stream "close" #(close! out))
-    (.on stream "data" #(put!  out %))
+    (.on stream "data" #(put! out %))
     out))
-
