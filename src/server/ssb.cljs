@@ -61,7 +61,7 @@
                         (dispatch! :response {:uid uid :message (js->clj content)}))))
     (dispatch! :error {:uid uid :message "Unable to get server with User-id"})))
 
-(defn get-id [uid
+(defn get-id [uid]
   (if-let [^js db (get @db-conns uid)]
     (:id (parse-json (.whoami db)))))
 
@@ -155,12 +155,11 @@
   ([uid source-fn] (db-collect uid source-fn :feed))
   ([uid source-fn bus-tag]
    (if-let [^js db (get @db-conns uid)]
-     (pull (source-fn db)
            (.collect pull (fn [err ary] 
                             (if err
                               (dispatch! :error {:uid uid :message (parse-json err)})
                               (dispatch! bus-tag {:uid uid :message (parse-json ary)})))))
-     (dispatch! :error {:uid uid :message (str "Unable to get server with User-id: " uid )}))))
+     (dispatch! :error {:uid uid :message (str "Unable to get server with User-id: " uid )})))
 
 (defn db-drain 
   ([uid source-fn] (db-drain uid source-fn :feed))
@@ -263,7 +262,7 @@
 (defn blobs-want [{:as request :keys [uid hash-id cb-fn]}]
   (if-let [^js db (get @db-conns uid)]
     (.blobs.want db hash-id (fn [err] (if err (println err)
-                                         (blobs-get! uid hash-id cb-fn))))
+                                         (get-blob! uid hash-id cb-fn))))
     (dispatch! :error {:uid uid :message (str "Unable to get server with User-id: " uid )})))
 
 (defn atob [str] 
@@ -273,11 +272,11 @@
 ;(assert (base64->binary 'SGVsbG8sIFdvcmxkIQ==') "Hello, World!")
 
 (defn dataURL->ArrayBuffer [dataURL]
-  (let [[MIME-string base64-string] (.split dataURL ',')
+  (let [[MIME-string base64-string] (.split dataURL ",")
         byte-string (atob base64-string)
         size (.length byte-string)
-        array (js/Uint8Array. size]
-    (for [i (range size)] (aset array i (aget byte-string i))))
+        array (js/Uint8Array. size)]
+    (for [i (range size)] (aset array i (aget byte-string i)))))
 
 
 (defn add-blob! 

@@ -3,6 +3,11 @@ A Clojurescript REPL for playing with Scuttlebutt Nodejs libraries.
 For more information on running clojurescript from Shadow-cljs:
  https://shadow-cljs.github.io/docs/UsersGuide.html
 
+Install globally via NPM
+#+BEGIN_SRC sh
+npm install -g shadow-cljs
+#+END_SRC
+
 Compile and watch for changes to source files:
 #+BEGIN_SRC sh
 shadow-cljs watch server
