@@ -262,7 +262,7 @@
   [{:as ev-msg :keys [event id ?data ring-req ?reply-fn send-fn uid]}]
   (let [msg (:msg ?data)]
     (debugf "Query event: %s" event)
-    ;(debugf "msg: %s" msg)
+    (debugf "msg: %s" msg)
     (dispatch! :query {:uid uid :msg msg}) 
     ;(ssb/query uid msg)
     ;(when ?reply-fn (?reply-fn {:post-event ?data}))

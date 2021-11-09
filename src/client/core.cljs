@@ -186,9 +186,9 @@
         reduce   (edn/read-string (.-value (.getElementById js/document "query-reduce")))
         count    (int (.-value (.getElementById js/document "query-limit")))
         reverse? (boolean (.-value (.getElementById js/document "query-reverse")))
-        query  {:query (remove nil? [(when map {:$map map})
+        query  {:query (into [] (remove nil? [(when map {:$map map})
                                      (when filter {:$filter filter}) 
-                                     (when reduce {:$reduce reduce})])
+                                     (when reduce {:$reduce reduce})]))
                 :limit count 
                 :reverse reverse?
                 }]

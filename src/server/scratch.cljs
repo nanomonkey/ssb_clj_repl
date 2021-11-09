@@ -1,11 +1,15 @@
 (ns server.scratch)
 
+;; These are all code snippets that aren't currently being used, but possibly have 
+;; future use.
+
 ;; CRUT messages
 {:create (fn [{:keys [uid type content]}] (publish! uid {:type type :val val}))
- :update (fn [{:keys [uid id changes]}] (publish! uid {:type :update 
+ :update (fn [{:keys [uid id changes]}] (publish! uid {:type "update"
                                                        :root id 
                                                        :content changes}))
  :tombstone (fn [{:keys [uid id]}] (publish! uid {:type :tombstone :root id}))}
+
 
 ;; Flume-reduce
 (def default-codec
