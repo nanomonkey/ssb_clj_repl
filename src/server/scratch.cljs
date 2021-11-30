@@ -129,21 +129,34 @@
 ;;SSB-query plugin
 
 (def last-10-posts (clj->js {:query [{:$filter {:value {:content {:type "post"}}}}] 
-                             :limit 10 :reverse true}))
+                             :limit 10 }))
 
-(def query-1 
+(def todays-posts (clj->js {:query [:$filter {:value {:content {:type "post" }
+                                                      :timestamp {:$gte 1539687600000 :$lt 1539774000000}}}] 
+                            :reverse true}))
+
+(def channel-count
     (clj->js [{:$filter {:value {:content {:channel {:$is "string"} :type "post"}}}}
               {:$reduce {:channel ["value" "content" "channel"]
                         :count {:$count true}
                         :timestamp {:$max ["value" "timestamp"]}}}
               {:$sort [["timestamp"] ["count"]]}]))
 
-(def query-2 
+(def channel-count-alt
   #js [{:$filter {:value {:content {:channel {:$is "string"} :type "post"}}}}
        {:$reduce {:channel ["value" "content" "channel"]
                   :count {:$count true}
                   :timestamp {:$max ["value" "timestamp"]}}}
        {:$sort [["timestamp"] ["count"]]}])
+
+(defn find-name [feed-id] (clj->js [{:limit 1 
+                              :reverse true
+                              :query [{:$filter {:value {:author feed-id,
+                                                         :content {:type "about" 
+                                                                   :about feed-id 
+                                                                   :name { :$is "string" }}}  ;;check to see name is set, as apposed to other about messages
+                                                 :timestamp { :$gt 0 }}} ;; a hack that forces ordering by timestamp
+                                      {:$map {:name ["value" "content" "name"]}}]}]))
 
 (defn query-read [db query]
   "returns channel with contents of query response"
@@ -154,8 +167,6 @@
     c)) 
 
 ;(take! (query-read server last-10-posts) println)
-
-
 
 (defn flatten-user-feed [db user-id]
   (pull (.createHistoryStream db #js {:id user-id})

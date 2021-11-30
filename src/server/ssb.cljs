@@ -81,11 +81,12 @@
       (js->clj content)))) 
 
 
+
 (defn flatten-msg [msg]
   (let [key (gobj/get msg "key")
         content (gobj/getValueByKeys msg #js ["value" "content"])
         author (gobj/getValueByKeys msg #js ["value" "author"])
-        encrypted? (string? content)]
+        encrypted? (and (string? content)(includes? ".box"))]
     (conj {:key key
            :author author}
           (if encrypted?

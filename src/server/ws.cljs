@@ -73,7 +73,7 @@
         [:hr]
         [:h2 "Query Feeds"]
         [:p [:label "Map"]]
-        [:p [:textarea#query-map {:rows "2" :cols "100"}]]
+        [:p [:textarea#query-map {:rows "2" :cols "100"} "{:timestamp [:value :timestamp], :type [:value :content :type], :value true}"]]
         [:p [:label "Filter"]] 
         [:p [:textarea#query-filter {:rows "2" :cols "100"} "{:value {:content {:type \"post\"}}}"]] 
         [:p [:label "Reduce"]] 

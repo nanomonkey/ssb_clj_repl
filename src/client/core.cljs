@@ -63,7 +63,7 @@
       (aset "alt" alt))
     (.appendChild images-div image)))
 
-;; Sente Channnels
+;; Sente Channels
 (let [{:keys [chsk ch-recv send-fn state]}
       (sente/make-channel-socket-client!
        "/chsk" ; Must match server Ring routing URL
@@ -245,7 +245,7 @@
                           :headers {:x-csrf-token (:csrf-token @chsk-state)}
                           :files files}
                          (fn [ajax-resp]
-                           (->output! "Ajax login response: %s" ajax-resp)))))
+                           (->output! "File upload response: %s" ajax-resp)))))
 
 (when-let [target-el (.getElementById js/document "btn-add-file")]
   (.addEventListener target-el "click" btn-add-file-click-ajax))
