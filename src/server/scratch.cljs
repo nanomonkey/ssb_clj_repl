@@ -3,11 +3,18 @@
 ;; These are all code snippets that aren't currently being used, but possibly have 
 ;; future use.
 
+;; js objects with methods
+(defn observable [val]
+  (let [state (clj->js val)]
+    (js-obj
+     "read"  (fn [] (state))
+     "write" (fn [new] (state (clj->js new))))))
+
 ;; CRUT messages
 {:create (fn [{:keys [uid type content]}] (publish! uid {:type type :val val}))
  :update (fn [{:keys [uid id changes]}] (publish! uid {:type "update"
                                                        :root id 
-                                                       :content changes}))
+                                                       :changes diffs}))
  :tombstone (fn [{:keys [uid id]}] (publish! uid {:type :tombstone :root id}))}
 
 
